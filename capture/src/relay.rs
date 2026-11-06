@@ -14,7 +14,7 @@
 
 use std::fmt;
 use std::io::{self, Read, Write};
-use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
+use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Once};
 use std::thread::{self, JoinHandle};
@@ -260,15 +260,18 @@ fn handle_client(mut client: TcpStream, shared: Shared) {
         Ok(target) => target,
         Err(_) => return,
     };
-    let (host, port) = target;
+    let host = target.host();
     if let Some(allow) = &shared.allow {
-        if !allow(&host, port) {
-            shared.fail(format!("destination not allowed by the capture allowlist: {host}:{port}"));
+        if !allow(&host, target.port) {
+            shared.fail(format!(
+                "destination not allowed by the capture allowlist: {}",
+                target.authority()
+            ));
             let _ = client.write_all(&[5, 2, 0, 1, 0, 0, 0, 0, 0, 0]);
             return;
         }
     }
-    let upstream = match dial_through(&shared.link, shared.tls.as_ref(), &host, port) {
+    let upstream = match dial_through(&shared.link, shared.tls.as_ref(), &target) {
         Ok(stream) => stream,
         Err((reply, reason)) => {
             shared.fail(reason);
@@ -295,8 +298,45 @@ fn handle_client(mut client: TcpStream, shared: Shared) {
     }
 }
 
+/// Where Chrome asked to connect. The SOCKS address type is kept: an IP is not rewritten
+/// as a domain name on the way to the upstream.
+#[derive(Clone, Debug)]
+enum HostAddr {
+    V4([u8; 4]),
+    V6([u8; 16]),
+    Name(String),
+}
+
+#[derive(Clone, Debug)]
+struct Destination {
+    host: HostAddr,
+    port: u16,
+}
+
+impl Destination {
+    /// Host as the allowlist sees it. An IPv6 literal has no brackets.
+    fn host(&self) -> String {
+        match &self.host {
+            HostAddr::V4(octets) => Ipv4Addr::from(*octets).to_string(),
+            HostAddr::V6(octets) => Ipv6Addr::from(*octets).to_string(),
+            HostAddr::Name(name) => name.clone(),
+        }
+    }
+
+    /// `host:port`, or `[ipv6]:port` when the host is an IPv6 literal (including a domain
+    /// whose text is an IPv6 address). This is the HTTP CONNECT authority.
+    fn authority(&self) -> String {
+        let host = self.host();
+        if matches!(self.host, HostAddr::V6(_)) || host.parse::<Ipv6Addr>().is_ok() {
+            format!("[{host}]:{}", self.port)
+        } else {
+            format!("{host}:{}", self.port)
+        }
+    }
+}
+
 /// Reads the SOCKS5 greeting and CONNECT request from Chrome. Only no-auth and CONNECT.
-fn socks_request(client: &mut TcpStream) -> io::Result<(String, u16)> {
+fn socks_request(client: &mut TcpStream) -> io::Result<Destination> {
     let mut head = [0u8; 2];
     client.read_exact(&mut head)?;
     if head[0] != 5 {
@@ -317,27 +357,29 @@ fn socks_request(client: &mut TcpStream) -> io::Result<(String, u16)> {
     }
     let host = match req[3] {
         1 => {
-            let mut b = [0u8; 4];
-            client.read_exact(&mut b)?;
-            Ipv4Addr::from(b).to_string()
+            let mut octets = [0u8; 4];
+            client.read_exact(&mut octets)?;
+            HostAddr::V4(octets)
         }
         3 => {
             let mut len = [0u8; 1];
             client.read_exact(&mut len)?;
             let mut name = vec![0u8; len[0] as usize];
             client.read_exact(&mut name)?;
-            String::from_utf8(name).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "name"))?
+            let name = String::from_utf8(name)
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "name"))?;
+            HostAddr::Name(name)
         }
         4 => {
-            let mut b = [0u8; 16];
-            client.read_exact(&mut b)?;
-            std::net::Ipv6Addr::from(b).to_string()
+            let mut octets = [0u8; 16];
+            client.read_exact(&mut octets)?;
+            HostAddr::V6(octets)
         }
         _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "address type")),
     };
     let mut port = [0u8; 2];
     client.read_exact(&mut port)?;
-    Ok((host, u16::from_be_bytes(port)))
+    Ok(Destination { host, port: u16::from_be_bytes(port) })
 }
 
 /// The tunnel to the upstream proxy, after authentication. Plain TCP, or TLS for `https://`.
@@ -356,8 +398,7 @@ enum DialFail {
 fn dial_through(
     link: &ProxyLink,
     tls: Option<&Arc<ClientConfig>>,
-    host: &str,
-    port: u16,
+    dest: &Destination,
 ) -> Result<Upstream, (u8, String)> {
     let server = link.server_url();
     match link.scheme() {
@@ -372,7 +413,7 @@ fn dial_through(
                 }
                 Err(DialFail::Tls(message)) => return Err((1, message)),
             };
-            http_connect(&mut stream, link, host, port, &server)?;
+            http_connect(&mut stream, link, dest, &server)?;
             Ok(Upstream::Tls(Box::new(stream)))
         }
         ProxyScheme::Http | ProxyScheme::Socks5 | ProxyScheme::Socks5h => {
@@ -382,8 +423,8 @@ fn dial_through(
             stream.set_read_timeout(Some(HANDSHAKE_TIMEOUT)).ok();
             stream.set_write_timeout(Some(HANDSHAKE_TIMEOUT)).ok();
             match link.scheme() {
-                ProxyScheme::Http => http_connect(&mut stream, link, host, port, &server)?,
-                _ => socks5_connect(&mut stream, link, host, port, &server)?,
+                ProxyScheme::Http => http_connect(&mut stream, link, dest, &server)?,
+                _ => socks5_connect(&mut stream, link, dest, &server)?,
             }
             Ok(Upstream::Plain(stream))
         }
@@ -584,11 +625,11 @@ pub(crate) fn proxy_failures_from_cdp(events: &str) -> Vec<String> {
 fn http_connect(
     stream: &mut (impl Read + Write),
     link: &ProxyLink,
-    host: &str,
-    port: u16,
+    dest: &Destination,
     server: &str,
 ) -> Result<(), (u8, String)> {
-    let mut request = format!("CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n");
+    let authority = dest.authority();
+    let mut request = format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n");
     if let (Some(user), Some(password)) = (link.user(), link.password()) {
         let token = base64(format!("{}:{}", user.expose(), password.expose()).as_bytes());
         request.push_str(&format!("Proxy-Authorization: Basic {token}\r\n"));
@@ -606,15 +647,14 @@ fn http_connect(
     match status {
         200 => Ok(()),
         407 => Err((2, format!("the proxy {server} refused the credentials (HTTP 407)"))),
-        code => Err((5, format!("the proxy {server} refused {host}:{port} (HTTP {code})"))),
+        code => Err((5, format!("the proxy {server} refused {authority} (HTTP {code})"))),
     }
 }
 
 fn socks5_connect(
     stream: &mut (impl Read + Write),
     link: &ProxyLink,
-    host: &str,
-    port: u16,
+    dest: &Destination,
     server: &str,
 ) -> Result<(), (u8, String)> {
     let io_err = |_: io::Error| (5u8, format!("the proxy {server} closed the connection"));
@@ -645,13 +685,27 @@ fn socks5_connect(
         }
         _ => return Err((1, format!("the proxy {server} offered no usable SOCKS5 method"))),
     }
-    let name = host.as_bytes();
-    if name.len() > 255 {
-        return Err((1, format!("the destination name is too long for SOCKS5: {host}")));
+    let mut request = vec![5, 1, 0];
+    match &dest.host {
+        HostAddr::V4(octets) => {
+            request.push(1);
+            request.extend_from_slice(octets);
+        }
+        HostAddr::V6(octets) => {
+            request.push(4);
+            request.extend_from_slice(octets);
+        }
+        HostAddr::Name(name) => {
+            let bytes = name.as_bytes();
+            if bytes.len() > 255 {
+                return Err((1, format!("the destination name is too long for SOCKS5: {name}")));
+            }
+            request.push(3);
+            request.push(bytes.len() as u8);
+            request.extend_from_slice(bytes);
+        }
     }
-    let mut request = vec![5, 1, 0, 3, name.len() as u8];
-    request.extend_from_slice(name);
-    request.extend_from_slice(&port.to_be_bytes());
+    request.extend_from_slice(&dest.port.to_be_bytes());
     stream.write_all(&request).map_err(io_err)?;
     let mut head = [0u8; 4];
     stream.read_exact(&mut head).map_err(io_err)?;
@@ -668,11 +722,12 @@ fn socks5_connect(
     };
     let mut bound = vec![0u8; rest];
     stream.read_exact(&mut bound).map_err(io_err)?;
+    let authority = dest.authority();
     match head[1] {
         0 => Ok(()),
-        5 => Err((5, format!("the proxy {server} refused {host}:{port}"))),
-        4 => Err((4, format!("the proxy {server} could not reach {host}:{port}"))),
-        _ => Err((1, format!("the proxy {server} failed to open {host}:{port}"))),
+        5 => Err((5, format!("the proxy {server} refused {authority}"))),
+        4 => Err((4, format!("the proxy {server} could not reach {authority}"))),
+        _ => Err((1, format!("the proxy {server} failed to open {authority}"))),
     }
 }
 
@@ -902,17 +957,47 @@ mod wire_tests {
                     }
                     log.lock().unwrap().push("auth-ok".to_string());
                     let mut req = [0u8; 4];
-                    let _ = c.read_exact(&mut req);
-                    let mut len = [0u8; 1];
-                    let _ = c.read_exact(&mut len);
-                    let mut name = vec![0u8; len[0] as usize];
-                    let _ = c.read_exact(&mut name);
+                    if c.read_exact(&mut req).is_err() {
+                        return;
+                    }
+                    let (atyp, connect_host, shown) = match req[3] {
+                        1 => {
+                            let mut octets = [0u8; 4];
+                            if c.read_exact(&mut octets).is_err() {
+                                return;
+                            }
+                            let ip = Ipv4Addr::from(octets).to_string();
+                            (1u8, ip.clone(), ip)
+                        }
+                        4 => {
+                            let mut octets = [0u8; 16];
+                            if c.read_exact(&mut octets).is_err() {
+                                return;
+                            }
+                            let ip = Ipv6Addr::from(octets).to_string();
+                            (4u8, ip.clone(), format!("[{ip}]"))
+                        }
+                        3 => {
+                            let mut len = [0u8; 1];
+                            if c.read_exact(&mut len).is_err() {
+                                return;
+                            }
+                            let mut name = vec![0u8; len[0] as usize];
+                            if c.read_exact(&mut name).is_err() {
+                                return;
+                            }
+                            let host = String::from_utf8_lossy(&name).into_owned();
+                            (3u8, host.clone(), host)
+                        }
+                        _ => return,
+                    };
                     let mut port_b = [0u8; 2];
-                    let _ = c.read_exact(&mut port_b);
+                    if c.read_exact(&mut port_b).is_err() {
+                        return;
+                    }
                     let target_port = u16::from_be_bytes(port_b);
-                    let host = String::from_utf8_lossy(&name).into_owned();
-                    log.lock().unwrap().push(format!("CONNECT {host}:{target_port}"));
-                    match TcpStream::connect((host.as_str(), target_port)) {
+                    log.lock().unwrap().push(format!("ATYP {atyp} {shown}:{target_port}"));
+                    match TcpStream::connect((connect_host.as_str(), target_port)) {
                         Ok(target) => {
                             let _ = c.write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
                             pipe(c, target);
@@ -951,9 +1036,17 @@ mod wire_tests {
                     }
                     log.lock().unwrap().push("auth-ok".to_string());
                     let target_line = head.lines().next().unwrap_or("").split(' ').nth(1).unwrap_or("").to_string();
-                    log.lock().unwrap().push(format!("CONNECT {target_line}"));
-                    let (h, p) = target_line.rsplit_once(':').unwrap();
-                    match TcpStream::connect((h, p.parse::<u16>().unwrap())) {
+                    let host_header = head
+                        .lines()
+                        .find(|line| line.to_ascii_lowercase().starts_with("host:"))
+                        .unwrap_or("")
+                        .to_string();
+                    log.lock().unwrap().push(format!("LINE {target_line}"));
+                    log.lock().unwrap().push(format!("HOST {host_header}"));
+                    let Some((h, p)) = split_connect_authority(&target_line) else {
+                        return;
+                    };
+                    match TcpStream::connect((h.as_str(), p)) {
                         Ok(target) => {
                             let _ = c.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n");
                             pipe(c, target);
@@ -998,10 +1091,15 @@ mod wire_tests {
                     }
                     log.lock().unwrap().push("auth-ok".to_string());
                     let target_line = head.lines().next().unwrap_or("").split(' ').nth(1).unwrap_or("").to_string();
-                    log.lock().unwrap().push(format!("CONNECT {target_line}"));
-                    let Some((h, p)) = target_line.rsplit_once(':') else { return };
-                    let Ok(target_port) = p.parse::<u16>() else { return };
-                    match TcpStream::connect((h, target_port)) {
+                    let host_header = head
+                        .lines()
+                        .find(|line| line.to_ascii_lowercase().starts_with("host:"))
+                        .unwrap_or("")
+                        .to_string();
+                    log.lock().unwrap().push(format!("LINE {target_line}"));
+                    log.lock().unwrap().push(format!("HOST {host_header}"));
+                    let Some((h, target_port)) = split_connect_authority(&target_line) else { return };
+                    match TcpStream::connect((h.as_str(), target_port)) {
                         Ok(target) => {
                             let _ = tls.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n");
                             pipe_tls(target, tls);
@@ -1045,20 +1143,45 @@ mod wire_tests {
         std::fs::read(fixture_dir().join("scrapelens-test-ca.crt.pem")).unwrap()
     }
 
+    /// `host:port` or `[ipv6]:port` from a CONNECT request line.
+    fn split_connect_authority(authority: &str) -> Option<(String, u16)> {
+        if let Some(rest) = authority.strip_prefix('[') {
+            let (host, port) = rest.split_once("]:")?;
+            return Some((host.to_string(), port.parse().ok()?));
+        }
+        let (host, port) = authority.rsplit_once(':')?;
+        Some((host.to_string(), port.parse().ok()?))
+    }
+
     /// A SOCKS5 client (Chrome's side): returns the reply code and the connected socket.
     fn chrome_connect(relay_port: u16, target_port: u16) -> (u8, TcpStream) {
-        let mut c = TcpStream::connect((Ipv4Addr::LOCALHOST, relay_port)).unwrap();
-        c.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-        c.write_all(&[5, 1, 0]).unwrap();
+        chrome_request(relay_port, 1, &[127, 0, 0, 1], target_port).unwrap()
+    }
+
+    /// Sends one CONNECT. `0xfe` means the relay closed the socket before a reply.
+    fn chrome_request(relay_port: u16, atyp: u8, addr: &[u8], port: u16) -> io::Result<(u8, TcpStream)> {
+        let mut c = TcpStream::connect((Ipv4Addr::LOCALHOST, relay_port))?;
+        c.set_read_timeout(Some(Duration::from_secs(10)))?;
+        c.write_all(&[5, 1, 0])?;
         let mut choice = [0u8; 2];
-        c.read_exact(&mut choice).unwrap();
-        assert_eq!(choice, [5, 0]);
-        let mut req = vec![5, 1, 0, 1, 127, 0, 0, 1];
-        req.extend_from_slice(&target_port.to_be_bytes());
-        c.write_all(&req).unwrap();
+        if c.read_exact(&mut choice).is_err() {
+            return Ok((0xfe, c));
+        }
+        if choice != [5, 0] {
+            return Ok((0xff, c));
+        }
+        let mut req = vec![5, 1, 0, atyp];
+        if atyp == 3 {
+            req.push(addr.len() as u8);
+        }
+        req.extend_from_slice(addr);
+        req.extend_from_slice(&port.to_be_bytes());
+        c.write_all(&req)?;
         let mut reply = [0u8; 10];
-        c.read_exact(&mut reply).unwrap();
-        (reply[1], c)
+        if c.read_exact(&mut reply).is_err() {
+            return Ok((0xfe, c));
+        }
+        Ok((reply[1], c))
     }
 
     fn start(link: &str, allow: Option<AllowFn>) -> Relay {
@@ -1079,7 +1202,7 @@ mod wire_tests {
         assert_eq!(&back, b"GET / HTTP/1.1\r\n\r\n");
         let log = seen.lock().unwrap().clone();
         assert_eq!(log[0], "auth-ok");
-        assert_eq!(log[1], format!("CONNECT 127.0.0.1:{echo}"));
+        assert_eq!(log[1], format!("ATYP 1 127.0.0.1:{echo}"));
         assert!(relay.failures().is_empty());
     }
 
@@ -1191,5 +1314,34 @@ mod wire_tests {
         assert!(plan.chrome_arg().starts_with("socks5://127.0.0.1:"));
         assert!(!plan.chrome_arg().contains("Pw-Plan-3") && !plan.chrome_arg().contains("exp-user"));
         drop(listener);
+    }
+
+    /// IPv4 (ATYP 1), domain (ATYP 3) and IPv6 (ATYP 4) stay in that form on both upstreams.
+    /// A domain whose text is an IPv6 literal is bracketed for HTTP and is not turned into ATYP 4.
+    #[test]
+    fn address_types_keep_their_form_on_http_and_socks5() {
+        let cases = [
+            (1u8, &[127, 0, 0, 1][..], "127.0.0.1:443", "ATYP 1 127.0.0.1:443"),
+            (3, b"example.test".as_slice(), "example.test:443", "ATYP 3 example.test:443"),
+            (4, &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1][..], "[::1]:443", "ATYP 4 [::1]:443"),
+            (3, b"::1".as_slice(), "[::1]:443", "ATYP 3 ::1:443"),
+        ];
+        for (atyp, addr, http_authority, socks_line) in cases {
+            let (http_port, http_seen) = http_upstream(USER, PASSWORD);
+            let http = start(&format!("http://{USER}:{PASSWORD}@127.0.0.1:{http_port}"), None);
+            let _ = chrome_request(http.port(), atyp, addr, 443).unwrap();
+            let http_log = http_seen.lock().unwrap().clone();
+            assert!(http_log.iter().any(|line| line == &format!("LINE {http_authority}")), "{http_log:?}");
+            assert!(
+                http_log.iter().any(|line| line == &format!("HOST Host: {http_authority}")),
+                "{http_log:?}"
+            );
+
+            let (socks_port, socks_seen) = socks_upstream(USER, PASSWORD);
+            let socks = start(&format!("socks5://{USER}:{PASSWORD}@127.0.0.1:{socks_port}"), None);
+            let _ = chrome_request(socks.port(), atyp, addr, 443).unwrap();
+            let socks_log = socks_seen.lock().unwrap().clone();
+            assert!(socks_log.iter().any(|line| line == socks_line), "{socks_log:?}");
+        }
     }
 }
