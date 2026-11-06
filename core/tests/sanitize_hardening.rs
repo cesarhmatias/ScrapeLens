@@ -69,6 +69,7 @@ fn bundle() -> SessionBundle {
         ("ETag", ETAG),
         ("X-Sri", SRI),
         ("X-Spki", SPKI),
+        ("X-Entropy", ENTROPY),
     ] {
         request.request_headers.add(name, value, &provenance());
     }
@@ -238,6 +239,20 @@ fn t13_entropy_is_marked_as_entropy() {
             .any(|key| key == "secret-format:entropy"),
         "the entropy value must be marked: {:?}",
         export.redactions
+    );
+    let header = export.bundle.session.requests[0]
+        .request_headers
+        .first("x-entropy")
+        .expect("entropy header");
+    assert_eq!(header.value, "[REDACTED]");
+    assert!(
+        header
+            .provenance
+            .notes
+            .iter()
+            .any(|note| note.contains("entropy")),
+        "the redacted header must say it was entropy: {:?}",
+        header.provenance.notes
     );
 }
 
