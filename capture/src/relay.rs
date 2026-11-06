@@ -857,6 +857,153 @@ pub(crate) fn chrome_proxy_failure(error_text: &str) -> Option<&'static str> {
     MAP.iter().find(|(code, _)| error_text.contains(code)).map(|(_, message)| *message)
 }
 
+const AUTH_ERROR: &str = "ERR_INVALID_AUTH_CREDENTIALS";
+const STATUS_ERROR: &str = "ERR_HTTP_RESPONSE_CODE_FAILURE";
+const AUTH_SURE: &str =
+    "the proxy asked for credentials or refused them; add them to the proxy link";
+const AUTH_MAYBE: &str =
+    "the proxy may be asking for credentials or refusing them; add them to the proxy link";
+const DEST_SURE: &str =
+    "the proxy refused the destination. Check that the proxy allows that destination";
+const DEST_MAYBE: &str =
+    "the proxy may be refusing the destination. Check that the proxy allows that destination";
+
+/// Direct-route failures. `ERR_PROXY_*` is mapped as before. The two codes that
+/// also happen with no proxy are a proxy failure only when `has_proxy` is set.
+/// A tunnel response of 407 or another 4xx (`HTTP_TRANSACTION_READ_TUNNEL_RESPONSE_HEADERS`)
+/// confirms it. Without that evidence the sentence says "may be", and with no
+/// proxy the codes stay ordinary page errors.
+pub(crate) fn direct_route_proxy_failures(has_proxy: bool, events: &str, netlog: &[u8]) -> Vec<String> {
+    let mut out = proxy_failures_from_cdp(events);
+    if !has_proxy {
+        return out;
+    }
+    let tunnel = tunnel_refusal(netlog);
+    let texts = loading_failed_texts(events);
+    if tunnel.auth {
+        push_new(&mut out, AUTH_SURE);
+    } else if texts.iter().any(|text| text.contains(AUTH_ERROR)) {
+        push_new(&mut out, AUTH_MAYBE);
+    }
+    if tunnel.destination {
+        push_new(&mut out, DEST_SURE);
+    } else if texts.iter().any(|text| text.contains(STATUS_ERROR)) {
+        push_new(&mut out, DEST_MAYBE);
+    }
+    out
+}
+
+fn push_new(out: &mut Vec<String>, message: &str) {
+    if !out.iter().any(|have| have == message) {
+        out.push(message.to_string());
+    }
+}
+
+fn loading_failed_texts(events: &str) -> Vec<String> {
+    let mut texts = Vec::new();
+    for line in events.lines() {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if value.get("method").and_then(|m| m.as_str()) != Some("Network.loadingFailed") {
+            continue;
+        }
+        if let Some(text) = value.pointer("/params/errorText").and_then(|t| t.as_str()) {
+            texts.push(text.to_string());
+        }
+    }
+    texts
+}
+
+struct TunnelRefusal {
+    auth: bool,
+    destination: bool,
+}
+
+/// 407, or another 4xx, on the proxy tunnel. Header text is not copied out.
+fn tunnel_refusal(netlog: &[u8]) -> TunnelRefusal {
+    let mut found = TunnelRefusal { auth: false, destination: false };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(netlog) else {
+        return found;
+    };
+    let Some(type_id) = value
+        .pointer("/constants/logEventTypes/HTTP_TRANSACTION_READ_TUNNEL_RESPONSE_HEADERS")
+        .and_then(|id| id.as_u64())
+    else {
+        return found;
+    };
+    let Some(events) = value.get("events").and_then(|events| events.as_array()) else {
+        return found;
+    };
+    for event in events {
+        if event.get("type").and_then(|ty| ty.as_u64()) != Some(type_id) {
+            continue;
+        }
+        let Some(params) = event.get("params") else { continue };
+        for code in header_statuses(params) {
+            if code == 407 {
+                found.auth = true;
+            } else if (400..500).contains(&code) {
+                found.destination = true;
+            }
+        }
+    }
+    found
+}
+
+fn header_statuses(params: &serde_json::Value) -> Vec<u16> {
+    let mut codes = Vec::new();
+    if let Some(line) = params.get("line").and_then(|line| line.as_str()) {
+        if let Some(code) = status_from_line(line) {
+            codes.push(code);
+        }
+    }
+    match params.get("headers") {
+        Some(serde_json::Value::Array(items)) => {
+            for item in items {
+                if let Some(code) = status_from_header(item) {
+                    codes.push(code);
+                }
+            }
+        }
+        Some(serde_json::Value::String(text)) => {
+            for line in text.lines() {
+                if let Some(code) = status_from_line(line) {
+                    codes.push(code);
+                }
+            }
+        }
+        _ => {}
+    }
+    codes
+}
+
+fn status_from_header(item: &serde_json::Value) -> Option<u16> {
+    if let Some(line) = item.as_str() {
+        return status_from_line(line);
+    }
+    let name = item.get("name").and_then(|name| name.as_str()).unwrap_or("");
+    let value = item.get("value").and_then(|value| value.as_str()).unwrap_or("");
+    if name.eq_ignore_ascii_case(":status") {
+        return value.trim().parse().ok();
+    }
+    status_from_line(name).or_else(|| status_from_line(&format!("{name}: {value}")))
+}
+
+fn status_from_line(line: &str) -> Option<u16> {
+    let line = line.trim();
+    if let Some(rest) = line.strip_prefix("HTTP/") {
+        let mut parts = rest.split_whitespace();
+        let _version = parts.next()?;
+        return parts.next()?.parse().ok();
+    }
+    let lower = line.to_ascii_lowercase();
+    let rest = lower.strip_prefix(":status")?;
+    let rest = rest.trim_start_matches([':', ' ']);
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
+}
+
 /// Distinct proxy failures found in a CDP JSONL (`Network.loadingFailed`).
 pub(crate) fn proxy_failures_from_cdp(events: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -1182,6 +1329,9 @@ mod tests {
             .unwrap()
             .contains("credentials"));
         assert!(chrome_proxy_failure("net::ERR_CONNECTION_REFUSED").is_none());
+        // These two also happen with no proxy, so the code alone is not a proxy failure.
+        assert!(chrome_proxy_failure("net::ERR_INVALID_AUTH_CREDENTIALS").is_none());
+        assert!(chrome_proxy_failure("net::ERR_HTTP_RESPONSE_CODE_FAILURE").is_none());
         let events = concat!(
             r#"{"method":"Network.loadingFailed","params":{"errorText":"net::ERR_PROXY_CONNECTION_FAILED"}}"#,
             "\n",
@@ -1192,6 +1342,75 @@ mod tests {
         );
         let found = proxy_failures_from_cdp(events);
         assert_eq!(found.len(), 1, "{found:?}");
+    }
+
+    fn ambiguous_cdp() -> &'static str {
+        concat!(
+            r#"{"method":"Network.loadingFailed","params":{"errorText":"net::ERR_INVALID_AUTH_CREDENTIALS"}}"#,
+            "\n",
+            r#"{"method":"Network.loadingFailed","params":{"errorText":"net::ERR_HTTP_RESPONSE_CODE_FAILURE"}}"#,
+            "\n",
+        )
+    }
+
+    fn netlog(event: &str, headers: &str) -> String {
+        format!(
+            r#"{{"constants":{{"logEventTypes":{{"{event}":7}}}},"events":[{{"type":7,"params":{{"headers":[{headers}]}}}}]}}"#
+        )
+    }
+
+    #[test]
+    fn ambiguous_proxy_codes_need_a_proxy_and_a_tunnel_status() {
+        let events = ambiguous_cdp();
+        let tunnel_403 = netlog(
+            "HTTP_TRANSACTION_READ_TUNNEL_RESPONSE_HEADERS",
+            r#""HTTP/1.1 403 Forbidden","Proxy-Authorization: Basic c2VjcmV0","Host: site-a.test:18781""#,
+        );
+        // A page that fails with these codes, even if a tunnel header is in the file, is not a
+        // proxy failure when the capture has no proxy.
+        let page = direct_route_proxy_failures(false, events, tunnel_403.as_bytes());
+        assert!(page.is_empty(), "{page:?}");
+
+        // An origin 403 uses the response-header event, not the tunnel. That is "may be".
+        let origin = netlog(
+            "HTTP_TRANSACTION_READ_RESPONSE_HEADERS",
+            r#""HTTP/1.1 403 Forbidden","Host: site-a.test:18781""#,
+        );
+        let maybe = direct_route_proxy_failures(true, events, origin.as_bytes());
+        assert!(maybe.iter().all(|line| line.contains("may be")), "{maybe:?}");
+        assert_eq!(maybe.len(), 2, "{maybe:?}");
+        for line in &maybe {
+            assert!(!line.contains("c2VjcmV0") && !line.contains("site-a.test"), "{line}");
+        }
+
+        let auth = netlog(
+            "HTTP_TRANSACTION_READ_TUNNEL_RESPONSE_HEADERS",
+            r#""HTTP/1.1 407 Proxy Authentication Required","Proxy-Authenticate: Basic realm=\"secret-user\"""#,
+        );
+        let sure_auth = direct_route_proxy_failures(
+            true,
+            r#"{"method":"Network.loadingFailed","params":{"errorText":"net::ERR_INVALID_AUTH_CREDENTIALS"}}"#,
+            auth.as_bytes(),
+        );
+        assert_eq!(
+            sure_auth,
+            vec!["the proxy asked for credentials or refused them; add them to the proxy link".to_string()]
+        );
+        assert!(!sure_auth[0].contains("may be"));
+        assert!(!sure_auth[0].contains("secret-user") && !sure_auth[0].contains("site-a.test"));
+
+        let denied = netlog(
+            "HTTP_TRANSACTION_READ_TUNNEL_RESPONSE_HEADERS",
+            r#"{"name":":status","value":"403"}"#,
+        );
+        let sure_dest = direct_route_proxy_failures(
+            true,
+            r#"{"method":"Network.loadingFailed","params":{"errorText":"net::ERR_HTTP_RESPONSE_CODE_FAILURE"}}"#,
+            denied.as_bytes(),
+        );
+        assert_eq!(sure_dest.len(), 1, "{sure_dest:?}");
+        assert!(sure_dest[0].contains("refused the destination"), "{sure_dest:?}");
+        assert!(!sure_dest[0].contains("may be") && !sure_dest[0].contains("site-a.test"));
     }
 }
 

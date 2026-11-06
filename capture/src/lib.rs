@@ -709,7 +709,7 @@ fn run_inner(
         if plan.route() == relay::ProxyRoute::Direct {
             let server = plan.link().server_url();
             let events = std::str::from_utf8(&cdp_bytes).unwrap_or("");
-            for reason in relay::proxy_failures_from_cdp(events) {
+            for reason in relay::direct_route_proxy_failures(true, events, &netlog) {
                 let qualified = if reason.contains("://") {
                     reason
                 } else {
