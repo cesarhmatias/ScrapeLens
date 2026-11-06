@@ -40,8 +40,10 @@ fn home_candidates() -> Vec<PathBuf> {
 /// Google Chrome comes first; Chromium is the alternative (and the only browser
 /// possible on arm64, where stable Chrome has no build) and is MARKED as such
 /// (`BrowserKind::Chromium`). Prefers the real binary (`/opt/google/chrome/chrome`,
-/// `/usr/lib/chromium/chromium`) over the `google-chrome`/`chromium` script that
-/// only calls it.
+/// `/usr/lib/chromium/chromium`, `/usr/lib64/chromium-browser/chromium-browser`)
+/// over the `google-chrome`/`chromium` script that only calls it. On Fedora the
+/// `/usr/bin/chromium-browser` link resolves to `chromium-browser.sh`, so the ELF
+/// beside that script is listed first.
 pub fn candidates() -> Vec<String> {
     let mut paths: Vec<PathBuf> = if cfg!(target_os = "macos") {
         vec![
@@ -57,6 +59,7 @@ pub fn candidates() -> Vec<String> {
             "/opt/google/chrome/google-chrome",
             "/usr/lib/chromium/chromium",
             "/usr/lib/chromium-browser/chromium-browser",
+            "/usr/lib64/chromium-browser/chromium-browser",
             "/usr/bin/chromium",
             "/usr/bin/chromium-browser",
         ]
@@ -435,8 +438,10 @@ fn validate_chrome_macos(chosen: &Path) -> Result<ValidatedChrome, ChromeError> 
 /// 2. the path is resolved to the canonical one (symlinks from `/usr/bin/google-chrome-stable`
 ///    → `/etc/alternatives/...` → `/opt/google/chrome/google-chrome`) and, if it lands on a
 ///    script (`#!`), only accepts a known wrapper name (`google-chrome`,
-///    `google-chrome-stable`, `chromium`, `chromium-browser`) and swaps it for the
-///    real binary beside it (`chrome`, `/usr/lib/chromium/chromium`); what runs is an **ELF**;
+///    `google-chrome-stable`, `chromium`, `chromium-browser`, Fedora's
+///    `chromium-browser.sh`) and swaps it for the real binary beside it
+///    (`chrome`, `/usr/lib/chromium/chromium`, or `chromium-browser` next to the
+///    `.sh`); what runs is an **ELF**;
 /// 3. the binary is a regular file, **owned by `trusted_uid`** (root), executable, **with no
 ///    write for group/others**, and **each directory above it, up to `/`**, is owned by the same
 ///    owner and has no write for group/others; when the current user is not that owner,
@@ -641,6 +646,11 @@ fn linux_real_binary(resolved: &Path) -> Result<PathBuf, ChromeError> {
             ("chromium", Some("/usr/bin/chromium")) => Some(PathBuf::from("/usr/lib/chromium/chromium")),
             ("chromium-browser", Some("/usr/bin/chromium-browser")) => {
                 Some(PathBuf::from("/usr/lib/chromium-browser/chromium-browser"))
+            }
+            // Fedora: /usr/bin/chromium-browser → /usr/lib64/chromium-browser/chromium-browser.sh
+            // The ELF is the sibling, not a binary elsewhere.
+            ("chromium-browser.sh", _) => {
+                resolved.parent().map(|dir| dir.join("chromium-browser"))
             }
             ("google-chrome" | "google-chrome-stable", _) => {
                 resolved.parent().map(|dir| dir.join("chrome"))
@@ -905,6 +915,38 @@ mod tests {
             assert!(pos("/opt/google/chrome/chrome") < pos("/usr/bin/google-chrome-stable"));
             assert!(pos("/usr/bin/google-chrome-stable") < pos("/usr/lib/chromium/chromium"));
             assert!(pos("/usr/lib/chromium/chromium") < pos("/usr/bin/chromium"));
+            assert!(
+                pos("/usr/lib64/chromium-browser/chromium-browser")
+                    < pos("/usr/bin/chromium-browser")
+            );
+        }
+
+        /// Fedora 41: `/usr/bin/chromium-browser` canonicalizes to
+        /// `chromium-browser.sh`. The script is not run; the ELF beside it is.
+        #[test]
+        fn fedora_chromium_browser_script_maps_to_the_elf_beside_it() {
+            let root = scratch("lx-fedora");
+            let dir = root.join("usr/lib64/chromium-browser");
+            std::fs::create_dir_all(&dir).unwrap();
+            let elf = dir.join("chromium-browser");
+            std::fs::copy("/bin/true", &elf).unwrap();
+            make_executable(&elf);
+            let marker = root.join("rodou");
+            let script = dir.join("chromium-browser.sh");
+            std::fs::write(&script, format!("#!/bin/sh\ntouch {}\n", marker.display())).unwrap();
+            make_executable(&script);
+            let link_dir = root.join("usr/bin");
+            std::fs::create_dir_all(&link_dir).unwrap();
+            let link = link_dir.join("chromium-browser");
+            symlink(&script, &link).unwrap();
+            let resolved = std::fs::canonicalize(&link).unwrap();
+            assert!(resolved.ends_with("chromium-browser.sh"), "{resolved:?}");
+            assert_eq!(
+                linux_real_binary(&resolved).unwrap(),
+                std::fs::canonicalize(&elf).unwrap()
+            );
+            assert!(!marker.exists(), "the wrapper script must not have run");
+            let _ = std::fs::remove_dir_all(root);
         }
 
         #[test]
