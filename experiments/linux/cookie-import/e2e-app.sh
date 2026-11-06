@@ -67,7 +67,7 @@ dbus-run-session -- sh -c '
   xdotool key --clearmodifiers ctrl+shift+r; echo "start sent"
   sleep 12; xwd -root -silent 2>/dev/null | convert xwd:- /out/after-start.png 2>/dev/null; echo "== processes after start"; ps -eo pid,comm,args | grep -E "chromium|chrome|firefox|scrapelens" | grep -v grep | cut -c1-200 | head -8
   sleep 13
-  xdotool mousemove 1271 150 click 1; echo "stop button clicked"
+  xdotool mousemove 1396 175 click 1  # Stop, 0.1.2 layout (1271,150 was 0.1.1); echo "stop button clicked"
   sleep 15
   xwd -root -silent 2>/dev/null | convert xwd:- /out/end.png 2>/dev/null; echo "== server log"; cat /tmp/srv.log 2>/dev/null; echo "== app stdout"; tail -5 /tmp/app.log 2>/dev/null
   echo "== session"; S=$(find $XDG_DATA_HOME -name session.json -path "*sessions*" | head -1); echo "$S"

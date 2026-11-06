@@ -1,67 +1,40 @@
 # Proxy acceptance: results (v0.1.2)
 
-Run: `run_acceptance.py` (full, all sections), driver and core built from one committed
-revision, `17cffdfdba6ed9badfba7738bbe046594a7bdab1`. Synthetic data only: loopback origin, local
-test proxies (`testserver/`), a dedicated Chrome profile per capture, no window. Not verified
-against commercial providers.
+Final acceptance for version 0.1.2, on the release commit `fd091d1`. The HEAD used for the run,
+`3f8e9ef`, only adds a line to `src-tauri/PACKAGING.md` on top of `fd091d1`; the code is the same.
+Synthetic data only: loopback origins, local test proxies (`testserver/`), a dedicated Chrome profile
+per capture, no window of the user's, no paid proxy. Not verified against commercial providers.
 
-## Findings
-
-1. **Direct route: refused credentials and refused destination give no proxy message.**
-   With the HTTP proxy on the direct route (`--proxy-server`), a `407` or a `403` from the proxy
-   reaches the session as `ERR_INVALID_AUTH_CREDENTIALS` and `ERR_HTTP_RESPONSE_CODE_FAILURE`.
-   Neither code is in the mapping, so the session carries only a generic `cdp.request_failed`.
-   The same refusals on the relay route give the actionable message. Cause: the code table in
-   `capture/src/relay.rs` (`chrome_proxy_failure`) has no entry for those two codes; the
-   consumer is `capture/src/lib.rs` (`proxy_failures_from_cdp`). Not fixed here (capture owner).
-2. **Unreachable proxy is not treated alike on the two routes.** On the relay route the
-   start fails with the actionable error. On the direct route the start succeeds and the
-   message is a notice (`capture.proxy_failure`). Both messages are actionable; the difference
-   in outcome is for the capture owner to decide.
-3. **Exported scripts** carry the notice that they do not use the proxy. It was added by Core
-   in `03b3238`; before that commit the cURL export had no such notice. Checked here on the pinned
-   revision: `export-curl` and `export-python` both carry it, with no host, port or credential.
-4. **The sanitized export has no proxy host or port** (`capture.proxy` keeps `scheme` and
-   `authenticated`). The proxy port does not appear anywhere in the sanitized files.
-
-## Accepted decisions (leader, after this run)
+## Accepted decisions (leader)
 
 - **Unreachable proxy differs between routes, accepted.** The relay route fails the start with an
   actionable error; the direct route starts the capture and shows the same actionable message as a
   notice. Both messages are actionable.
-- **Hop-by-hop exclusion in fidelity, accepted, and always reported.** On the H1 direct route the
-  test proxy rewrites `Connection`; it is listed in each fidelity row.
-- **Regression normalization, accepted, and always reported.** The fields listed under
-  "Comparisons" are ignored, and the row says so.
+- **Hop-by-hop exclusion in fidelity, accepted, and always reported.** On the H1 direct route the test
+  proxy rewrites `Connection` (listed in each row). The `may be` wording is accepted for the plain HTTP
+  direct route, where the NetLog does not tell a refusal from an ordinary failure.
+- **Regression normalization, accepted, and always reported** (see "Comparisons").
 
-## Comparisons and how they were made
+## What changed since the earlier run
 
-- **Fidelity** compares what the origin received for the same probe URL, with no proxy, a direct
-  route and a relay route, for HTTP/1.1 and HTTP/2. The probe name in the path is normalized
-  (it differs by design). Hop-by-hop headers (`Connection`, `Proxy-*`, ...) are compared apart: on the
-  direct HTTP/1.1 route the test proxy rewrites `Connection` (`keep-alive` to `close`); this is
-  the proxy's rewriting, not the product's. Everything else is compared by name, order and value.
-- **Regression** compares a no-proxy session from this commit with one from `f69e9dc`,
-  ignoring timestamps, ids, durations, paths, attachment file names (they embed request ids),
-  provenance metadata and the origin's connection and stream counters. The response body
-  is compared by its canonical JSON. A mutation control and an empty-match control were run
-  on the comparison itself: both are detected.
-- **Egress** is indirect on macOS: the TCP peers of the capture's Chrome processes were sampled
-  every 0.4 s during a relay capture (30 samples). The Docker packet observer
-  (`experiments/proxy/docker/`) was not run.
+- The direct route now names a 407 ("asked for credentials or refused them") and a 403 ("may be refusing
+  the destination"). Before, both were generic Chrome errors (`ERR_INVALID_AUTH_CREDENTIALS`,
+  `ERR_HTTP_RESPONSE_CODE_FAILURE`).
 
-## Not run
+## Findings still open (capture owner)
 
-- The App window, the **Proxy** field and the preference file: the export dialog was checked in the
-  source only (its row is marked not executed).
-- The Docker packet observer for egress.
-- The MCP confirmation dialog: the controlled path is called directly, after the same checks.
-- `netlog.request_without_url`: not triggered in these captures. The honest-state check
-  (probe listed, not more certain than the no-proxy baseline) passed on the direct route.
+1. **The relay repeats the same refusal in the notice.** A wrong password produced 28 identical
+   `refused the credentials (HTTP 407)` entries and 36 session warnings in the packaged App (amd64 `.deb`,
+   `linux-proxy/amd64-deb-wrong`). Cause: `Shared::fail` in `capture/src/relay.rs:341` stores each
+   failure with no de-duplication, and `capture/src/lib.rs:707` copies that list to the warnings and to
+   the notice as it is. The direct route de-duplicates (`lib.rs:716`); the relay does not.
+2. **Unreachable proxy outcome differs by route** (accepted, above).
 
-## Details
+## Table by criterion (acceptance, run-8)
 
-Totals: falhou 2, não executado 1, passou 31.
+Generated by `summarize.py` from a run of `run_acceptance.py`. Synthetic data only; local test proxies; not verified against commercial providers.
+
+Totals (acceptance run-8, fd091d1): passou 34.
 
 
 ## Falhas
@@ -70,9 +43,9 @@ Totals: falhou 2, não executado 1, passou 31.
 |---|---|---|---|
 | unreachable | direct | passou | actionable, shown as notice: proxy: the proxy http://127.0.0.1:18899 could not be reached: check the host name, the port and the network, then try again |
 | unreachable | relay | passou | actionable, shown as error: the proxy http://127.0.0.1:18899 could not be reached: check the host name, the port and the network, then try again |
-| auth_refused | direct | falhou | no proxy-specific message; session warnings=['cdp.request_failed', 'cdp.unhandled_events', 'correlate.netlog_unmatched', 'netlog.time_unit_detected']; generic page failures=1 |
+| auth_refused | direct | passou | actionable, shown as notice: proxy: the proxy http://127.0.0.1:18806 asked for credentials or refused them |
 | auth_refused | relay | passou | actionable, shown as notice: proxy: the proxy http://127.0.0.1:18806 refused the credentials (HTTP 407) |
-| target_refused | direct | falhou | no proxy-specific message; session warnings=['cdp.request_failed', 'cdp.unhandled_events', 'correlate.netlog_unmatched', 'correlate.unmatched', 'netlog.time_unit_detected']; generic page failures=1 |
+| target_refused | direct | passou | actionable, shown as notice: proxy: the proxy http://127.0.0.1:18808 may be refusing the destination. Check that the proxy allows that destination |
 | target_refused | relay | passou | actionable, shown as notice: proxy: the proxy http://127.0.0.1:18807 refused site-a.test:18781 (HTTP 403) |
 | invalid link | unsupported scheme | passou | socks4 is not supported: use socks5 or socks5h |
 | invalid link | path present | passou | the proxy link must not have a path, query or fragment (percent-encode special characters in credentials) |
@@ -98,10 +71,10 @@ Totals: falhou 2, não executado 1, passou 31.
 
 | Criterion | Case | Result | Detail |
 |---|---|---|---|
-| password percent-encoded works | relay http auth | passou | 27 authenticated relayed connection(s) in the proxy evidence |
+| password percent-encoded works | relay http auth | passou | 20 authenticated relayed connection(s) in the proxy evidence |
 | allowlist refuses before the proxy | relay, controlled | passou | navigate refused (url_not_allowed); 0 proxy records and 0 origin records for site-b.test |
 | untrusted HTTPS proxy certificate refused | relay | passou | error: the proxy https://127.0.0.1:18803 presented a certificate the system does not trust (invalid peer certificate: UnknownIssuer). Install the proxy CA in the system trust store, or check the host name |
-| no password or Base64 in any output | all files, stdout, stderr, logs | passou | 0 hits in 3086 file(s) under the run folder |
+| no password or Base64 in any output | all files, stdout, stderr, logs | passou | 0 hits in 3107 file(s) under the run folder |
 
 ## Exportacao
 
@@ -111,7 +84,7 @@ Totals: falhou 2, não executado 1, passou 31.
 | sanitized export without host/port | relay h1 | passou | capture.proxy={"scheme": "http", "authenticated": true}; proxy port in output: [] |
 | exported script warns it does not use the proxy | export-curl | passou | warning=yes; host/port/credential in script=no |
 | exported script warns it does not use the proxy | export-python | passou | warning=yes; host/port/credential in script=no |
-| export dialog shows the notice | App Export.tsx (source) | não executado | source has the notice element; the dialog itself was not driven (no window) |
+| export dialog shows the notice | packaged App, Linux (Xvfb render) | passou | Export / Sanitize dialog rendered from the 0.1.2 .deb (amd64) for a proxied session; notice shown; see linux-proxy/amd64-deb-ok/05-export.png |
 
 ## Regressao
 
@@ -129,7 +102,7 @@ Totals: falhou 2, não executado 1, passou 31.
 
 | Criterion | Case | Result | Detail |
 |---|---|---|---|
-| Chrome peers are loopback only (macOS, indirect) | relay | passou | 29 sample(s), 0 non-loopback peers |
+| Chrome peers are loopback only (macOS, indirect) | relay | passou | 24 sample(s), 0 non-loopback peers |
 
 ## Fidelidade-NetLog
 
@@ -137,3 +110,90 @@ Totals: falhou 2, não executado 1, passou 31.
 |---|---|---|---|
 | direct route: no false 'verified' from NetLog | h2 direct | passou | probe listed=True; request_without_url raised=False; verification: no proxy=partial, direct=partial |
 | direct route: no false 'verified' from NetLog | h1 direct | passou | probe listed=True; request_without_url raised=False; verification: no proxy=verified, direct=verified |
+
+## Packaged App on Linux, with the proxy (0.1.2 .deb and AppImage)
+
+Each case runs the packaged App under Xvfb in a container, types the proxy link into the Proxy field
+(`http://host.docker.internal:18731`, with credentials), starts and stops a capture to
+`http://site-a.test:18781/echo-order`, and opens **Export / Sanitize…**. The origin and the test proxy run
+on this machine. Screenshots are in `linux-proxy/<case>/` (`03-started`, `04-stopped`, `05-export`).
+
+| Case | Package | `capture.proxy` (no credential) | Session | `refused` (relay) | Secrets in files | Screen |
+|---|---|---|---|---|---|---|
+| amd64 deb, right password | ScrapeLens_0.1.2_amd64.deb | scheme http, host, port 18731, authenticated true, route relay | complete, echo-order 200 | 0 (10 connections) | 0 hits (22 files) | header line and Proxy field correct; export dialog shows the proxy notice |
+| amd64 deb, wrong password | ScrapeLens_0.1.2_amd64.deb | same | partial, 36 warnings | 0 (28 connections; 28 `auth_failed` from the test proxy) | 0 hits (25 files) | refusal shown, repeated 28 times (finding 1) |
+| amd64 AppImage, right password | ScrapeLens_0.1.2_amd64.AppImage | same | complete, echo-order 200 | 0 (10 connections) | 0 hits (22 files) | same header and Proxy field |
+| arm64 deb, right password | ScrapeLens_0.1.2_arm64.deb | same | complete, echo-order 200 | 0 (10 connections) | 0 hits (22 files) | same header and Proxy field |
+| arm64 AppImage, right password | ScrapeLens_0.1.2_aarch64.AppImage | same | complete, echo-order 200 | 0 (10 connections) | 0 hits (24 files) | same header and Proxy field |
+
+- "0 hits" searched the password, its percent-encoded form, and the Base64 of `user:pass` and of the
+  percent-encoded `user:pass`, in every non-image file: session, app data, preferences, App logs, container
+  and test-proxy logs, and proxy evidence. Screenshots were not searched (the password is never shown in
+  them; the Proxy field shows the host only).
+- The proxy evidence of the right-password cases shows the relayed tunnels. Five connections per case end
+  with `relay_error: idle timeout` after 30 s: they are keep-alive tunnels that Chrome left idle, closed by
+  the test proxy. They are not refusals.
+- The export dialog notice was rendered from the amd64 `.deb` (`05-export.png`).
+
+## Docker egress observer (`experiments/proxy/docker/egress_check.sh`)
+
+Container: Chrome with its own dedicated profile; `iptables` allows only loopback and the proxy;
+the counters of the final DROP rules say how many packets tried to leave another way.
+
+| Case | Route | Page loaded (origin saw the request) | Packets that tried another route |
+|---|---|---|---|
+| `rules-direct-http` | HTTP proxy, no credentials (test proxy 18725) | yes | 0 (DNS UDP/TCP, mDNS, TCP 443, other: all 0) |
+| `socks-bare-https` | SOCKS5 proxy, no credentials (test proxy 18724) | yes | 0 |
+| `socks-prefs-https` | SOCKS5 with the profile preferences (DoH off, WebRTC policy) | yes | 0 |
+| `noproxy` (positive control) | no proxy | no (DOM empty) | DNS UDP 53: 84 packets, so the observer sees a leak |
+
+- Named exceptions, as the PO decided: DNS for the proxy's own host (resolved before the rules are set,
+  so it does not appear in the counters), loopback targets (the proxy carries them).
+- **Not run:** the HTTPS case through the local relay. The relay runs inside the capture process, not in
+  the container. The macOS sampling below is the indirect evidence for the relay route.
+
+## macOS egress (indirect)
+
+Sampling of the TCP peers of the capture's Chrome processes during a relay capture (run-8): 24 samples,
+0 non-loopback peers.
+
+## Cookie import regression (amd64, 0.1.2 packages)
+
+Harness: `experiments/linux/cookie-import/` (a real navigation in a test profile, loopback server,
+the `Cookie` header read on the first navigation). The App ran from the packaged file.
+
+| Case | Package | Imported | Undecryptable | `Cookie` on first `/` | Result |
+|---|---|---|---|---|---|
+| Google Chrome, unlocked keyring | amd64 .deb | 1 | 0 | `sid` | passou |
+| Google Chrome, unlocked keyring | amd64 AppImage | 1 | 0 | `sid` | passou |
+| Firefox, unlocked | amd64 .deb | 1 | 0 | `sid` | passou |
+| Firefox, unlocked | amd64 AppImage | 1 | 0 | `sid` | passou |
+| Chrome, mixed v10/v11, keyring locked | amd64 .deb | 1 (v10) | 1 (v11) | `old10` (the v11 `sid` is not readable with a locked keyring) | passou; the persistent warning is on screen (`end.png`: "1 cookie(s) from Google Chrome — Default could not be decrypted", with the action) |
+
+The first attempt of this batch (`cookie-attempt1-stop-coordinate`) had a Stop coordinate from the 0.1.1
+layout: the page got its cookie, but the session was not written. The harness now uses the 0.1.2 layout
+(`experiments/linux/cookie-import/e2e-app.sh`); the table comes from the corrected run (`cookie-v2`).
+Not run: the Chrome and Firefox arm64 cookie cases, the locked/absent keyring on the AppImage, and Brave/Edge
+on this release (not requested for this round).
+
+## Comparisons and how they were made
+
+- **Fidelity** compares what the origin received for the same probe URL, with no proxy, a direct
+  route and a relay route, for HTTP/1.1 and HTTP/2. The probe name in the path is normalized
+  (it differs by design). Hop-by-hop headers (`Connection`, `Proxy-*`, ...) are compared apart: on the
+  direct HTTP/1.1 route the test proxy rewrites `Connection` (`keep-alive` to `close`); this is the
+  proxy's rewriting, not the product's. Everything else is compared by name, order and value.
+- **Regression** compares a no-proxy session from this commit with one from `f69e9dc`,
+  ignoring timestamps, ids, durations, paths, attachment file names (they embed request ids),
+  provenance metadata and the origin's connection and stream counters. The response body
+  is compared by its canonical JSON. A mutation control and an empty-match control were run
+  on the comparison itself: both are detected.
+- **NetLog, direct route:** the probe must stay listed and must not be more certain than the no-proxy
+  session. On HTTP/1.1 it is `verified` in both; on HTTP/2 it is `partial` in both.
+
+## Not run
+
+- The App window, the **Proxy** field's preference file, and the MCP confirmation dialog (the controlled
+  path is called directly, after the same checks).
+- The HTTPS relay case in the Docker observer (see above).
+- `netlog.request_without_url` was not triggered in these captures.
