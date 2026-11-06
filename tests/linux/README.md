@@ -22,7 +22,7 @@ the script's output folder has `host:` and `execution type:` in its first lines.
   with SHA-256 checked on both sides before running).
 - `scrapelens-testserver` binary compiled for Linux (built inside the machine from `testserver/`),
   in `~/scrapelens/testserver/target/release/`.
-- Import fixtures in `~/fixtures-r14/`: `har-derived.json` and `h1h2h3.chrome-netlog.json`.
+- Import fixtures: the versioned `experiments/results/h1-page/har-derived.json` and `chrome-netlog.json` (no `$HOME` dependency).
 
 ## Script
 `tests/linux/acceptance.sh <amd64|arm64> <AppImage> [.deb] [testserver] [probe_server.py]`
@@ -38,7 +38,8 @@ the script's output folder has `host:` and `execution type:` in its first lines.
    During capture: `ss -ltnp` and confirmation that no LISTEN socket belongs to the capture Chrome.
 5. Checks the session on disk (`~/.local/share/app.scrapelens.desktop/sessions`).
 6. Imports with `--import-har` and `--import-netlog` through the test CLI.
-7. Checks the counts: HAR complete 24, NetLog partial 32.
+7. Checks the counts, computed from those files: HAR complete with as many requests as entries in `har-derived.json`; NetLog partial with as many requests as distinct `URL_REQUEST` sources in `chrome-netlog.json` (12 and 19 with the current files).
+   The round-14 counts (HAR 24, NetLog 32) came from fixtures that are no longer available and are not reproducible.
 8. `navigator.webdriver`: capture with the probe page `tests/linux/probe_server.py` (loopback);
    the recorded value must be `false`.
 9. Window screenshots (`import -window`), saved in the output folder.

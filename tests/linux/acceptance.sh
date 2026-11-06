@@ -191,10 +191,13 @@ REQS="$(python3 -c "import json,sys;d=json.load(open(sys.argv[1]));s=d.get('sess
 log "capture: requests=$REQS"
 [ "${REQS:-0}" -ge 1 ] && check 0 "capture with requests ($REQS)" || check 1 "capture with requests"
 
-# 6. Imports through the test CLI (fixtures in $HOME/fixtures-r14); the open app is closed first.
-FIX="$HOME/fixtures-r14"
+# 6. Imports through the test CLI. Fixtures: the versioned files in experiments/results/h1-page/
+#    (relative to this checkout, not $HOME). The open app is closed first.
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+FIX="$ROOT/experiments/results/h1-page"
+HAR_FIX="$FIX/har-derived.json"; NETLOG_FIX="$FIX/chrome-netlog.json"
 kill $APP 2>/dev/null; sleep 3; pkill -x scrapelens 2>/dev/null; sleep 1
-if [ -f "$FIX/har-derived.json" ] && [ -f "$FIX/h1h2h3.chrome-netlog.json" ]; then
+if [ -f "$HAR_FIX" ] && [ -f "$NETLOG_FIX" ]; then
   import_cli(){ # $1=flag $2=file $3=session prefix; waits for the session to appear (up to 60 s), then stops
     local before after
     before="$(ls "$DATA" 2>/dev/null | grep "^$3" | sort)"
@@ -207,13 +210,17 @@ if [ -f "$FIX/har-derived.json" ] && [ -f "$FIX/h1h2h3.chrome-netlog.json" ]; th
     sleep 2; kill $ip 2>/dev/null; sleep 1; pkill -x scrapelens 2>/dev/null; sleep 1
     [ "$after" != "$before" ] && [ -n "$after" ]
   }
-  import_cli --import-har "$FIX/har-derived.json" har; check $? "import --import-har (har session created)"
-  import_cli --import-netlog "$FIX/h1h2h3.chrome-netlog.json" netlog; check $? "import --import-netlog (netlog session created)"
+  import_cli --import-har "$HAR_FIX" har; check $? "import --import-har (har session created)"
+  import_cli --import-netlog "$NETLOG_FIX" netlog; check $? "import --import-netlog (netlog session created)"
 else
   check 1 "fixtures present in $FIX"
 fi
 
-# 7. Counts on disk: HAR complete 24, NetLog partial 32 (only this run's sessions).
+# 7. Counts on disk (only this run's sessions). The expected numbers are computed from the fixture files,
+#    never written here: HAR = entries of har-derived.json; NetLog = distinct URL_REQUEST sources in chrome-netlog.json.
+EXP_HAR="$(python3 "$ROOT/tests/linux/expected_counts.py" har "$HAR_FIX" 2>/dev/null)"
+EXP_NETLOG="$(python3 "$ROOT/tests/linux/expected_counts.py" netlog "$NETLOG_FIX" 2>/dev/null)"
+log "expected from fixtures: HAR requests=${EXP_HAR:-none}, NetLog requests=${EXP_NETLOG:-none}"
 python3 - "$DATA" "$OUT/counts.txt" <<'PY' || true
 import json,glob,os,sys
 root,out=sys.argv[1],sys.argv[2]; rows=[]
@@ -224,8 +231,8 @@ for d in sorted(glob.glob(os.path.join(root,'*'))):
     rows.append(f"{os.path.basename(d)} {s['completeness']['state']} {s['completeness']['counts'].get('requests')}")
 open(out,'w').write("\n".join(rows)+"\n")
 PY
-grep -q "^har-.* complete 24$" "$OUT/counts.txt" 2>/dev/null && check 0 "HAR complete with 24 requests" || check 1 "HAR complete with 24 requests"
-grep -q "^netlog-.* partial 32$" "$OUT/counts.txt" 2>/dev/null && check 0 "NetLog partial with 32 requests" || check 1 "NetLog partial with 32 requests"
+[ -n "$EXP_HAR" ] && grep -q "^har-.* complete $EXP_HAR$" "$OUT/counts.txt" 2>/dev/null && check 0 "HAR complete with $EXP_HAR requests (entries of har-derived.json)" || check 1 "HAR complete with ${EXP_HAR:-?} requests (entries of har-derived.json)"
+[ -n "$EXP_NETLOG" ] && grep -q "^netlog-.* partial $EXP_NETLOG$" "$OUT/counts.txt" 2>/dev/null && check 0 "NetLog partial with $EXP_NETLOG requests (URL_REQUEST sources of chrome-netlog.json)" || check 1 "NetLog partial with ${EXP_NETLOG:-?} requests (URL_REQUEST sources of chrome-netlog.json)"
 
 # 8. navigator.webdriver: new capture with the probe page (loopback), expected value false.
 PROBE_LOG="$OUT/probe.jsonl"; : > "$PROBE_LOG"
