@@ -48,23 +48,42 @@ fn set_mode(_path: &Path, _mode: u32) -> Result<()> {
     Ok(())
 }
 
-/// macOS system aliases at the root (`/var`, `/tmp`, `/etc` -> `/private/...`):
-/// the only ancestor symlinks accepted when a path is created or written. The
-/// target must be under `/private`, which is what the system links do.
-pub fn is_system_alias(path: &Path) -> bool {
-    matches!(path.to_str(), Some("/var") | Some("/tmp") | Some("/etc"))
-        && fs::read_link(path)
-            .map(|target| target.starts_with("/private") || target.starts_with("private"))
-            .unwrap_or(false)
+/// A symlink may be traversed only as part of the system layout: the link and
+/// its containing directory belong to root, and the directory is not writable
+/// by group or other. This covers macOS `/tmp`, `/var` and `/etc` and Linux
+/// layouts such as `/home -> var/home` without a fixed name list. A dotfile
+/// symlink in the user's home is owned by the user (or lives in a user-owned
+/// parent) and is refused. Symlink permissions are not meaningful on Linux, so
+/// the writability rule is applied to the containing directory.
+#[cfg(unix)]
+fn trusted_system_link(link_uid: u32, parent_uid: u32, parent_mode: u32) -> bool {
+    link_uid == 0 && parent_uid == 0 && parent_mode & 0o022 == 0
+}
+
+#[cfg(unix)]
+pub fn is_trusted_symlink_ancestor(path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    let (Ok(link), Ok(parent_meta)) = (fs::symlink_metadata(path), fs::metadata(parent)) else {
+        return false;
+    };
+    trusted_system_link(link.uid(), parent_meta.uid(), parent_meta.mode())
+}
+
+#[cfg(not(unix))]
+pub fn is_trusted_symlink_ancestor(_path: &Path) -> bool {
+    false
 }
 
 /// First ancestor of `path` (including `path`) that is a symlink and is not a
-/// macOS system alias. `None` means the chain is safe to traverse.
+/// trusted system link. `None` means the chain is safe to traverse.
 pub fn first_symlink_ancestor(path: &Path) -> Option<PathBuf> {
     path.ancestors()
         .find(|ancestor| {
             fs::symlink_metadata(ancestor)
-                .map(|meta| meta.file_type().is_symlink() && !is_system_alias(ancestor))
+                .map(|meta| meta.file_type().is_symlink() && !is_trusted_symlink_ancestor(ancestor))
                 .unwrap_or(false)
         })
         .map(Path::to_path_buf)
@@ -73,10 +92,10 @@ pub fn first_symlink_ancestor(path: &Path) -> Option<PathBuf> {
 /// Creates (if needed) the session directory with permission 0700.
 ///
 /// The whole chain is checked component by component before a component is
-/// created: a symlink ancestor (except a macOS system alias), `..`, a file or a
-/// foreign-owned destination is refused before any chmod or write. Missing
-/// components are created with mode 0700 from the start, one at a time, and
-/// each one is inspected again right after creation.
+/// created: a symlink ancestor not owned by root (except a trusted system
+/// link), `..`, a file or a foreign-owned destination is refused before any
+/// chmod or write. Missing components are created with mode 0700 from the
+/// start, one at a time, and each one is inspected again right after creation.
 pub fn ensure_private_dir(path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
@@ -105,12 +124,12 @@ pub fn ensure_private_dir(path: &Path) -> Result<()> {
             match fs::symlink_metadata(&current) {
                 Ok(meta) => {
                     if meta.file_type().is_symlink() {
-                        if is_system_alias(&current) {
+                        if is_trusted_symlink_ancestor(&current) {
                             continue;
                         }
                         return Err(CoreError::LimitExceeded {
                             message: format!(
-                                "{} is a symbolic link; refused (ancestor of the destination)",
+                                "{} is a symbolic link; refused (ancestor of the destination); indicate a real folder for the session",
                                 current.display()
                             ),
                         });
@@ -547,6 +566,10 @@ mod tests {
         std::os::unix::fs::symlink(&dir, &link).unwrap();
         let error = ensure_private_dir(&link).unwrap_err();
         assert!(error.to_string().contains("symbolic link"), "{error}");
+        assert!(
+            error.to_string().contains("indicate a real folder"),
+            "{error}"
+        );
         assert!(fs::symlink_metadata(&link)
             .unwrap()
             .file_type()
@@ -556,6 +579,41 @@ mod tests {
         fs::write(&file, b"x").unwrap();
         let error = ensure_private_dir(&file).unwrap_err();
         assert!(error.to_string().contains("not a directory"), "{error}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn system_symlink_exception_is_owner_and_mode_based() {
+        // Injected owners keep the accepted case testable without root.
+        assert!(trusted_system_link(0, 0, 0o755), "root link + root parent");
+        assert!(
+            trusted_system_link(0, 0, 0o555),
+            "root parent, not writable"
+        );
+        assert!(!trusted_system_link(501, 0, 0o755), "user-owned link");
+        assert!(!trusted_system_link(0, 501, 0o755), "user-owned parent");
+        assert!(!trusted_system_link(0, 0, 0o775), "group-writable parent");
+        assert!(!trusted_system_link(0, 0, 0o757), "other-writable parent");
+    }
+
+    #[cfg(all(unix, target_os = "linux"))]
+    #[test]
+    fn root_owned_home_symlink_is_accepted_when_running_as_root() {
+        use std::os::unix::fs::PermissionsExt;
+        if effective_uid() != 0 {
+            eprintln!("skipping: needs root to own the simulated /home layout");
+            return;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        let real = root.path().join("var").join("home");
+        fs::create_dir_all(&real).unwrap();
+        fs::set_permissions(root.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(real.parent().unwrap(), fs::Permissions::from_mode(0o755)).unwrap();
+        std::os::unix::fs::symlink(&real, &home).unwrap();
+        let destination = home.join("user").join("session");
+        ensure_private_dir(&destination).unwrap();
+        assert!(destination.is_dir());
     }
 
     #[cfg(unix)]
