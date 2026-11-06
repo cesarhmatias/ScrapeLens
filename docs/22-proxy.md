@@ -36,6 +36,8 @@ An `https://` proxy on the relay route uses TLS with the system trust store. Cer
 
 With an allowlist, the relay refuses any destination the allowlist does not permit, before contacting the upstream proxy.
 
+The relay accepts connections only from the process tree of the browser the capture started, on macOS and Linux. Anything it cannot confirm is refused. A process running as the same user with access to that browser is outside this threat model.
+
 ## Keeping traffic on the proxy
 
 Only the dedicated capture profile is changed, never system policy and never your own browser profile:
