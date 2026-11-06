@@ -66,7 +66,8 @@ pub fn ensure_private_dir(path: &Path) -> Result<()> {
                 builder
                     .create(path)
                     .map_err(|error| CoreError::io(path, error))?;
-                let meta = fs::symlink_metadata(path).map_err(|error| CoreError::io(path, error))?;
+                let meta =
+                    fs::symlink_metadata(path).map_err(|error| CoreError::io(path, error))?;
                 check_private_dir(path, &meta)?;
             }
             Err(error) => return Err(CoreError::io(path, error)),
@@ -257,10 +258,7 @@ pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
     if let Ok(meta) = fs::symlink_metadata(&attachments_dir) {
         if meta.file_type().is_symlink() {
             return Err(CoreError::LimitExceeded {
-                message: format!(
-                    "{} is a symbolic link; refused",
-                    attachments_dir.display()
-                ),
+                message: format!("{} is a symbolic link; refused", attachments_dir.display()),
             });
         }
     }
@@ -474,10 +472,7 @@ mod tests {
         let link = root.path().join("link");
         std::os::unix::fs::symlink(&dir, &link).unwrap();
         let error = ensure_private_dir(&link).unwrap_err();
-        assert!(
-            error.to_string().contains("symbolic link"),
-            "{error}"
-        );
+        assert!(error.to_string().contains("symbolic link"), "{error}");
         assert!(fs::symlink_metadata(&link)
             .unwrap()
             .file_type()
@@ -509,6 +504,26 @@ mod tests {
         let meta = fs::symlink_metadata(&dir).unwrap();
         let error = check_private_owner(&dir, meta.uid(), meta.uid().wrapping_add(1)).unwrap_err();
         assert!(error.to_string().contains("owned by uid"), "{error}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_private_dir_refuses_real_foreign_metadata() {
+        use std::os::unix::fs::MetadataExt;
+        // Metadata only: a foreign directory is refused before any chmod, so
+        // this never changes a system directory.
+        for path in ["/private/tmp", "/tmp"] {
+            let Ok(meta) = fs::symlink_metadata(path) else {
+                continue;
+            };
+            if !meta.is_dir() || meta.uid() == effective_uid() {
+                continue;
+            }
+            let error = check_private_dir(Path::new(path), &meta).unwrap_err();
+            assert!(error.to_string().contains("owned by uid"), "{error}");
+            return;
+        }
+        eprintln!("skipping: no foreign-owned directory available");
     }
 
     #[cfg(unix)]
