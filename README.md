@@ -88,6 +88,7 @@ open src-tauri/target/release/bundle/macos/ScrapeLens.app
    - Optionally enter the **Start URL** and, if you want to start already logged in, select the source browser in the **Cookies** menu (or keep `No cookies (clean session)`).
    - Click **Start session**. ScrapeLens will open an isolated Chrome instance with a temporary profile (`0700`).
    - Run the desired flow in the browser and click **Stop** in ScrapeLens.
+   - **macOS Keychain prompt:** the first time cookies are imported from a browser, macOS asks to allow access to that browser's *Safe Storage* key. Click **Allow**, not **Always Allow**: *Always Allow* gives the `security` tool permanent access, so any program that runs it can read the key. <!-- Remove this note when Keychain access moves into ScrapeLens itself (T09). -->
 2. **Open or Import** (`⌘O`):
    - Open a native session folder (`session.json`) with **Open capture…**, or import **HAR** and **NetLog** files with the dedicated **HAR** and **NetLog** buttons in the top bar.
 3. **Inspect and Search**:
