@@ -129,6 +129,9 @@ def run_proto(proto: str, bin_path: pathlib.Path) -> dict:
     outdir.mkdir(parents=True)
     plan = plan_for(proto)
     (outdir / "plan.json").write_text(json.dumps(plan, indent=2))
+    if not SPKI_FILE.exists():
+        # test certificates are generated, not tracked: make them once for this checkout
+        subprocess.run(["cargo", "run", "-q", "--", "gen-cert"], cwd=REPO / "testserver", check=True)
     spki = SPKI_FILE.read_text().strip()
 
     srv = subprocess.Popen(

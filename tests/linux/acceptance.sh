@@ -16,6 +16,14 @@ TESTSERVER="${4:-$HOME/scrapelens/testserver/target/release/scrapelens-testserve
 PROBE="${5:-$HOME/scrapelens/tests/linux/probe_server.py}"
 OUT="$HOME/sl-acceptance-$ARCH_LABEL-$(date +%Y%m%d%H%M%S)"
 mkdir -p "$OUT"; FAILS=0
+# This script drives the App with test variables (SCRAPELENS_TEST_MODE, SCRAPELENS_CAPTURE_URL,
+# SCRAPELENS_CAPTURE_NETWORK). A release build ignores them, so refuse an AppImage without them.
+# Build the test binary with: cargo build --features test-hooks (see src-tauri/TEST-HOOKS.md).
+if ! (cd "$OUT" && "$APPIMAGE" --appimage-extract 'usr/bin/scrapelens' >/dev/null 2>&1) \
+   || ! grep -q 'SCRAPELENS_TEST_MODE' "$OUT/squashfs-root/usr/bin/scrapelens" 2>/dev/null; then
+  echo "refusing: $APPIMAGE has no test-hooks (release build). Build it with --features test-hooks." >&2
+  exit 2
+fi
 export XDG_DATA_HOME="$OUT/xdg/data" XDG_CONFIG_HOME="$OUT/xdg/config" XDG_CACHE_HOME="$OUT/xdg/cache"
 DATA="$XDG_DATA_HOME/app.scrapelens.desktop/sessions"
 export DISPLAY=:99

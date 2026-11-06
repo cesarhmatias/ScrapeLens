@@ -14,6 +14,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 ROOT="$(pwd)"
+# Test certificates are generated, not tracked: make them when this checkout has none.
+[ -f "$ROOT/fixtures/tls/scrapelens-test-localhost.key.pem" ] || (cd "$ROOT/testserver" && cargo run -q -- gen-cert) || exit 1
 RUN_ID="${1:-$(date -u +%Y%m%dT%H%M%SZ)}"
 BASE_PORT="${2:-${SCRAPELENS_BASE_PORT:-9781}}"
 H1="127.0.0.1:${BASE_PORT}"

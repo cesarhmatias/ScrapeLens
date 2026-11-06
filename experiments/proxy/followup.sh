@@ -12,6 +12,8 @@ PW=${PROXY_TEST_PASSWORD:-Pw-Exp-7f3a9Q}
 USER=${PROXY_TEST_USER:-exp-user}
 TS="$ROOT/testserver/target/debug/scrapelens-testserver"
 CA="$ROOT/fixtures/tls/scrapelens-test-ca.crt.pem"
+# Test certificates are generated, not tracked: make them when this checkout has none.
+[ -f "$ROOT/fixtures/tls/scrapelens-test-localhost.key.pem" ] || (cd "$ROOT/testserver" && cargo run -q -- gen-cert) || exit 1
 BIN="$ROOT/capture/target/debug/examples/proxy_import"
 mkdir -p "$OUT"
 PIDS=""
@@ -21,7 +23,7 @@ trap cleanup EXIT INT TERM
 if [ ! -x "$TS" ]; then
   (cd "$ROOT/testserver" && cargo build -q --bin scrapelens-testserver) || exit 1
 fi
-(cd "$ROOT/capture" && cargo build -q --example proxy_import) || exit 1
+(cd "$ROOT/capture" && cargo build -q --example proxy_import --features test-hooks) || exit 1
 
 "$TS" serve --only h1,h2 --no-h3-on-h2-port \
   --h1 127.0.0.1:18781 --h2 127.0.0.1:18782 \

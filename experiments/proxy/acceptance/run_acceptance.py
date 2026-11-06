@@ -245,8 +245,12 @@ def build_from_archive(out: pathlib.Path, rev: str):
     (driver_dir / "src").mkdir(exist_ok=True)
     # The baseline predates the proxy fields: it gets the legacy `common` driver only.
     shutil.copy(HERE / "driver" / "src" / "legacy_baseline.rs", driver_dir / "src" / "main.rs")
-    (driver_dir / "Cargo.toml").write_text((HERE / "driver" / "Cargo.toml").read_text()
-                                           .replace("../../../../capture", "../capture"))
+    # The driver asks for capture's `test-hooks` feature; a past revision may predate it, and cargo
+    # then refuses to resolve. Drop the request there (the legacy baseline reads no gated variables).
+    manifest = (HERE / "driver" / "Cargo.toml").read_text().replace("../../../../capture", "../capture")
+    if not re.search(r"^\s*test-hooks\s*=", (dest / "capture" / "Cargo.toml").read_text(), re.M):
+        manifest = manifest.replace(', features = ["test-hooks"]', "")
+    (driver_dir / "Cargo.toml").write_text(manifest)
     proc = subprocess.run(["cargo", "build", "-q", "--manifest-path", str(driver_dir / "Cargo.toml")],
                           capture_output=True, text=True)
     (out / "logs" / f"build-{rev}.stderr").write_text(proc.stderr)

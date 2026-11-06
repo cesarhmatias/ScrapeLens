@@ -11,6 +11,8 @@ ROOT=$(cd "$HERE/../.." && pwd)
 PW=${PROXY_TEST_PASSWORD:-Pw-Exp-7f3a9Q}; USER=${PROXY_TEST_USER:-exp-user}
 TS="$ROOT/testserver/target/debug/scrapelens-testserver"
 TLS="$ROOT/fixtures/tls"
+# Test certificates are generated, not tracked: make them when this checkout has none.
+[ -f "$TLS/scrapelens-test-localhost.key.pem" ] || (cd "$ROOT/testserver" && cargo run -q -- gen-cert) || exit 1
 mkdir -p "$OUT"
 PIDS=""
 cleanup() { for p in $PIDS; do kill $p 2>/dev/null; done; }
