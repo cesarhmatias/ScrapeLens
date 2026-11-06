@@ -20,6 +20,10 @@ pub struct ExportOptions {
     pub include_body: bool,
     /// Body byte limit for a command-line export.
     pub max_body_bytes: usize,
+    /// The session was captured through a proxy; the generated script cannot
+    /// reproduce it and says so. The proxy address and credentials are not part
+    /// of the flag.
+    pub captured_through_proxy: bool,
 }
 
 impl Default for ExportOptions {
@@ -27,6 +31,7 @@ impl Default for ExportOptions {
         Self {
             include_body: true,
             max_body_bytes: 1024 * 1024,
+            captured_through_proxy: false,
         }
     }
 }

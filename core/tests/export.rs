@@ -143,3 +143,26 @@ fn python_string_and_bytes_escaping() {
         "b\"\\x00\\x01a\\n\\\"\""
     );
 }
+
+#[test]
+fn proxy_capture_adds_a_comment_without_host_or_credentials() {
+    let request = request();
+    let note = "# This script does not use the capture proxy; requests may leave from another IP.";
+    let curl_plain = to_curl(&request, None, &ExportOptions::default()).unwrap().text;
+    let python_plain = to_python(&request, None, &ExportOptions::default()).unwrap().text;
+    assert!(!curl_plain.contains(note));
+    assert!(!python_plain.contains(note));
+
+    let options = ExportOptions {
+        captured_through_proxy: true,
+        ..ExportOptions::default()
+    };
+    let curl = to_curl(&request, None, &options).unwrap().text;
+    let python = to_python(&request, None, &options).unwrap().text;
+    assert!(curl.contains(note), "{curl}");
+    assert!(python.contains(note), "{python}");
+    for text in [&curl, &python] {
+        assert!(!text.contains("proxy.invalid"), "{text}");
+        assert!(!text.contains("8080"), "{text}");
+    }
+}

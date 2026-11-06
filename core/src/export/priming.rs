@@ -152,7 +152,7 @@ const SENSITIVE_WORDS: &[&str] = &[
 ];
 /// Words too short to match as a substring (`rg` in `target`): they only count
 /// as a whole word of the name (`rg`, `user_rg`, `sid`, `jsid`).
-const SENSITIVE_SHORT_WORDS: &[&str] = &["rg", "sid", "sessid", "jsid", "tel", "fone"];
+pub(super) const SENSITIVE_SHORT_WORDS: &[&str] = &["rg", "sid", "sessid", "jsid", "tel", "fone"];
 /// Abbreviations and PII/credential terms, only as a whole word of the name
 /// (`v_pass` yes, `v_passo` no). They apply with and without an adapter.
 const SENSITIVE_ABBREVIATIONS: &[&str] = &[
@@ -3441,6 +3441,16 @@ fn to_python_with(
         "Sensitive or redacted values are required parameters, with no default.".to_string(),
     ] {
         text.push_str(&comment(&line));
+    }
+    if session
+        .session
+        .capture
+        .as_ref()
+        .is_some_and(|capture| capture.proxy.is_some())
+    {
+        text.push_str(&comment(
+            "This script does not use the capture proxy; requests may leave from another IP.",
+        ));
     }
     let emitted = format!("{plan}\n{params_code}\n{step_code}");
     let kinds = literal_pii_kinds(&emitted);

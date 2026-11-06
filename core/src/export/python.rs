@@ -77,6 +77,11 @@ pub fn to_python_with_origins(
     text.push_str(
         "# This export does NOT reproduce TLS or the browser fingerprint (JA3/JA4, frames, HPACK); only the HTTP request.\n",
     );
+    if options.captured_through_proxy {
+        text.push_str(
+            "# This script does not use the capture proxy; requests may leave from another IP.\n",
+        );
+    }
     text.push_str(
         "# Preserves header order and duplicates; HTTP/2 pseudoheaders do not exist in HTTP/1.1.\n",
     );

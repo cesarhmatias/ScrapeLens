@@ -432,7 +432,16 @@ fn export_request(args: &[String], is_curl: bool) -> Result<(), String> {
         .find_request(request_id)
         .ok_or_else(|| format!("request {request_id} not found"))?;
     let body = scrapelens_core::export::request_body_bytes(&imported.bundle, request);
-    let options = scrapelens_core::export::ExportOptions::default();
+    let options = scrapelens_core::export::ExportOptions {
+        captured_through_proxy: imported
+            .bundle
+            .session
+            .session
+            .capture
+            .as_ref()
+            .is_some_and(|capture| capture.proxy.is_some()),
+        ..Default::default()
+    };
     let origins = if args.iter().any(|arg| arg == "--with-origins") {
         Some(
             scrapelens_core::flow::value_origins(

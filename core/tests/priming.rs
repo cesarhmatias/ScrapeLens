@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use scrapelens_core::export::priming::{to_python, PrimingOptions};
+use scrapelens_core::model::{CaptureMeta, ProxyRecord};
 use scrapelens_core::{import_har, SessionBundle};
 
 fn fixture(dir: &str, name: &str) -> SessionBundle {
@@ -2360,4 +2361,27 @@ fn overriding_an_optional_parameter_changes_neither_plan_hash_nor_plan_parameter
     };
     assert!(!names(&base).contains(&"op".to_string()));
     assert!(names(&overridden).contains(&"op".to_string()));
+}
+
+#[test]
+fn proxy_capture_notes_that_the_script_does_not_use_the_proxy() {
+    let mut bundle = fixture("detran-pb-real-shape", "real-shape-1round.har");
+    let note = "# This script does not use the capture proxy; requests may leave from another IP.";
+    let without = generate(&bundle, "har-0001");
+    assert!(!without.contains("capture proxy"), "direct capture must not change");
+
+    bundle.session.session.capture = Some(CaptureMeta {
+        proxy: Some(ProxyRecord {
+            scheme: "http".to_string(),
+            host: Some("proxy.invalid".to_string()),
+            port: Some(8080),
+            authenticated: true,
+            route: None,
+        }),
+        ..Default::default()
+    });
+    let with_proxy = generate(&bundle, "har-0001");
+    assert!(with_proxy.contains(note), "{with_proxy}");
+    assert!(!with_proxy.contains("proxy.invalid"));
+    assert!(!with_proxy.contains("8080"));
 }

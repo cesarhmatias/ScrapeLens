@@ -26,6 +26,8 @@ use crate::model::{
 };
 use crate::store;
 
+use super::priming::SENSITIVE_SHORT_WORDS;
+
 #[derive(Debug, Clone)]
 pub struct SanitizeOptions {
     pub placeholder: String,
@@ -1099,7 +1101,6 @@ pub(super) const PT_PII_WORDS: &[&str] = &[
     "nomes",
     "sobrenome",
     "sobrenomes",
-    "rg",
     "matricula",
     "matriculas",
 ];
@@ -1134,12 +1135,14 @@ pub(super) fn fold_name(name: &str) -> String {
         .collect()
 }
 
-/// Key segments: non-alphanumeric separators and camelCase boundaries, folded.
+/// Key segments: non-alphanumeric separators and camelCase boundaries (including
+/// an acronym followed by a name, `XChaveApi` -> `x`, `chave`, `api`), folded.
 fn name_words(name: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut current = String::new();
     let mut prev_lower = false;
-    for ch in name.chars() {
+    let mut chars = name.chars().peekable();
+    while let Some(ch) = chars.next() {
         if !ch.is_alphanumeric() {
             if !current.is_empty() {
                 words.push(std::mem::take(&mut current));
@@ -1147,7 +1150,8 @@ fn name_words(name: &str) -> Vec<String> {
             prev_lower = false;
             continue;
         }
-        if ch.is_uppercase() && prev_lower && !current.is_empty() {
+        let next_lower = chars.peek().is_some_and(|next| next.is_lowercase());
+        if ch.is_uppercase() && !current.is_empty() && (prev_lower || next_lower) {
             words.push(std::mem::take(&mut current));
         }
         prev_lower = ch.is_lowercase();
@@ -1182,6 +1186,14 @@ fn pt_credential_in(words: &[String]) -> bool {
     words
         .iter()
         .any(|word| PT_CREDENTIAL_WORDS.contains(&word.as_str()))
+}
+
+/// Short sensitive words shared with priming (`rg`, `sid`, `tel`...): whole key
+/// segment only, so `cargo` and `org` do not match `rg`.
+fn short_word_in(words: &[String]) -> bool {
+    words
+        .iter()
+        .any(|word| SENSITIVE_SHORT_WORDS.contains(&word.as_str()))
 }
 
 fn pt_pii_in(words: &[String]) -> bool {
@@ -1261,16 +1273,17 @@ pub fn is_sensitive_header(name: &str) -> bool {
     if is_listed_sensitive_header(name) {
         return true;
     }
-    let name = name.to_ascii_lowercase();
-    let compact: String = name
+    let lower = name.to_ascii_lowercase();
+    let compact: String = lower
         .chars()
         .filter(|ch| ch.is_ascii_alphanumeric())
         .collect();
-    let words = name_words(&name);
-    !name.starts_with(':')
+    let words = name_words(name);
+    !lower.starts_with(':')
         && (has_secret_word(&compact)
             || pt_credential_in(&words)
             || pt_pii_in(&words)
+            || short_word_in(&words)
             || compact.contains("jwt")
             || compact.contains("session")
             || compact.contains("passwd")
@@ -1373,6 +1386,7 @@ pub(super) fn is_sensitive_key(name: &str) -> bool {
         || compact.ends_with("secretkey")
         || pt_credential_in(&words)
         || pt_pii_in(&words)
+        || short_word_in(&words)
         || pt_access_code_in(&words)
 }
 
@@ -2751,6 +2765,9 @@ mod tests {
             "rg",
             "user_rg",
             "rg_cliente",
+            "tel",
+            "fone",
+            "jsid",
             "matricula",
             "codigo_acesso",
             "codigoDeAcesso",
@@ -2763,6 +2780,7 @@ mod tests {
             "org",
             "cargo",
             "target",
+            "tela",
             "renomear",
             "nomeado",
             "nome_arquivo",
@@ -2778,17 +2796,29 @@ mod tests {
         }
         for header in [
             "X-Chave-Api",
+            "XChaveApi",
             "X-Sessao",
             "X-Sessão",
+            "XAutorizacao",
             "Autorizacao",
             "Autorização",
             "X-Nome",
+            "XNomeCompleto",
             "X-Rg",
             "X-Codigo-Acesso",
+            "X-Tel",
         ] {
             assert!(is_sensitive_header(header), "{header} must be sensitive");
         }
-        for header in ["Content-Type", "X-Forwarded-For", "Author", "Origin", ":authority"] {
+        for header in [
+            "Content-Type",
+            "X-Forwarded-For",
+            "X-Cargo",
+            "X-Org",
+            "Author",
+            "Origin",
+            ":authority",
+        ] {
             assert!(!is_sensitive_header(header), "{header} must not be sensitive");
         }
     }
@@ -2873,7 +2903,32 @@ mod tests {
         assert_eq!(json["page"], 2);
         assert_eq!(json["nome_arquivo"], "page.html", "a technical nome label is not PII");
         let form_text = String::from_utf8_lossy(form);
-        assert!(form_text.contains("page=2"), "{form_text}");
+        assert_eq!(
+            form_text,
+            "chave_api=[REDACTED]&nome=[REDACTED]&codigo_acesso=[REDACTED]&page=2"
+        );
+        assert_eq!(json["segredo"], "[REDACTED]");
+        assert_eq!(json["credencial"], "[REDACTED]");
+        assert_eq!(json["nome"], "[REDACTED]");
+        assert_eq!(json["codigo_acesso"], "[REDACTED]");
+        let sanitized_url = &export.bundle.session.requests[0];
+        assert!(sanitized_url.url.contains("chave=%5BREDACTED%5D"), "{}", sanitized_url.url);
+        assert!(sanitized_url.url.contains("sessao=%5BREDACTED%5D"), "{}", sanitized_url.url);
+        assert!(sanitized_url.url.contains("nome=%5BREDACTED%5D"), "{}", sanitized_url.url);
+        assert_eq!(
+            sanitized_url.request_headers.first_value("x-chave-api"),
+            Some("[REDACTED]")
+        );
+        assert_eq!(
+            sanitized_url.request_headers.first_value("autorização"),
+            Some("[REDACTED]")
+        );
+        assert_eq!(
+            sanitized_url.request_headers.first_value("x-nome"),
+            Some("[REDACTED]")
+        );
+        assert_eq!(sanitized_url.cookie.pairs[0].value, "[REDACTED]");
+        assert_eq!(sanitized_url.cookie.pairs[1].value, "[REDACTED]");
     }
 
     #[test]
