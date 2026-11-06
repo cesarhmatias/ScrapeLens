@@ -572,8 +572,23 @@ fn run_inner(
             "; browser: Chromium (alternative to stable Google Chrome, which does not exist for this system/architecture)",
         );
     }
+    // `capture.proxy`: the scheme, the authentication flag and (full export only) the
+    // address and route. The credentials are never part of it.
+    let proxy_record = proxy_plan.as_ref().map(|plan| {
+        scrapelens_core::model::ProxyRecord {
+            scheme: plan.link().scheme().as_str().to_string(),
+            host: Some(plan.link().host().to_string()),
+            port: Some(plan.link().port()),
+            authenticated: plan.link().authenticated(),
+            route: Some(match plan.route() {
+                relay::ProxyRoute::Direct => scrapelens_core::model::ProxyRoute::Direct,
+                relay::ProxyRoute::Relay => scrapelens_core::model::ProxyRoute::Relay,
+            }),
+        }
+    });
     match imported.bundle.session.session.capture.as_mut() {
         Some(capture) => {
+            capture.proxy = proxy_record.clone();
             capture.mode = Some("cdp+netlog".to_string());
             capture.headless = Some(config.headless);
             capture.browser_binary = Some(config.chrome.display().to_string());
@@ -590,6 +605,7 @@ fn run_inner(
                 headless: Some(config.headless),
                 chrome_args: Some(recorded_args),
                 notes: Some(automation_note),
+                proxy: proxy_record,
             });
         }
     }
@@ -813,8 +829,17 @@ fn chrome_args(
     }
     match (resolver_rules, config.network) {
         // Controlled capture: only the allowlist hosts resolve; no
-        // certificate relaxation.
-        (Some(rules), _) => args.insert(args.len() - 1, format!("--host-resolver-rules={rules}")),
+        // certificate relaxation. Through a proxy, Chrome must still reach the local relay
+        // (its address is a literal the rules would deny), so the loopback address is
+        // excluded; loopback TARGETS then go through the proxy too (see below), where the
+        // relay refuses anything the allowlist does not permit.
+        (Some(rules), _) => {
+            let rules = match proxy_arg {
+                Some(_) => format!("{rules}, EXCLUDE 127.0.0.1"),
+                None => rules.to_string(),
+            };
+            args.insert(args.len() - 1, format!("--host-resolver-rules={rules}"));
+        }
         // Common App capture: normal network. No DNS rules.
         (None, NetworkMode::Open) => {}
         // Tests only: nothing beyond loopback resolves.
@@ -832,7 +857,9 @@ fn chrome_args(
         // them (direct route). WebRTC must not open UDP outside the proxy.
         args.push(format!("--proxy-server={server}"));
         args.push("--force-webrtc-ip-handling-policy=disable_non_proxied_udp".to_string());
-        if config.test_proxy_bypass_loopback {
+        // A controlled capture sends loopback targets through the proxy as well, so the
+        // allowlist covers them; the App's common capture keeps Chrome's default bypass.
+        if resolver_rules.is_some() || config.test_proxy_bypass_loopback {
             args.push("--proxy-bypass-list=<-loopback>".to_string());
         }
     }
@@ -3890,6 +3917,32 @@ mod tests {
             chrome_args(&config, Path::new("/x/p"), Path::new("/x/p/n.json"), None, true, proxy)
         };
         let with_relay = base(false, Some("socks5://127.0.0.1:40123"));
+        // A controlled capture (rules present): loopback goes through the proxy, and the
+        // relay's own address is excluded from the rules.
+        let controlled = {
+            let config = CaptureConfig {
+                chrome: PathBuf::from("/x/chrome"),
+                session_dir: PathBuf::from("/x/session"),
+                start_url: String::new(),
+                headless: true,
+                ignore_cert: false,
+                network: NetworkMode::LoopbackOnly,
+                cookie_source: None,
+                initial_cookies: Vec::new(),
+                proxy: None,
+                test_proxy_bypass_loopback: false,
+            };
+            chrome_args(
+                &config,
+                Path::new("/x/p"),
+                Path::new("/x/p/n.json"),
+                Some("MAP * ~NOTFOUND, EXCLUDE site-a.test"),
+                true,
+                Some("socks5://127.0.0.1:40123"),
+            )
+        };
+        assert!(controlled.contains(&"--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE site-a.test, EXCLUDE 127.0.0.1".to_string()));
+        assert!(controlled.contains(&"--proxy-bypass-list=<-loopback>".to_string()));
         assert!(with_relay.contains(&"--proxy-server=socks5://127.0.0.1:40123".to_string()));
         assert!(with_relay.contains(&"--force-webrtc-ip-handling-policy=disable_non_proxied_udp".to_string()));
         assert!(!with_relay.iter().any(|a| a.contains("proxy-bypass-list")), "production keeps the loopback bypass");

@@ -63,3 +63,16 @@ Chrome runs with a temporary profile inside `<dir>` and is stopped by the script
    absent through a proxy: the contract's session note covers it), CDP multi-session
    pairing for iframes/workers (`cdp_capture.mjs` attaches to the page only; coverage here
    comes from NetLog URLs and the origin log).
+
+## Live check of the product path
+
+`live_check.sh <out>` runs the controlled capture (`capture/examples/proxy_live.rs`:
+stable Chrome, CDP + NetLog, allowlist `site-a.test` and `site-b.test`) through the Rust
+relay to a SOCKS5 test upstream that requires `exp-user` / a test password. It then
+scans every output for the password and its Base64 (`secret hits total: 0` is the pass
+condition). Last run: 9 CONNECTs through the upstream, 9 requests at the origin (page,
+iframe, worker, popup), the session carries `capture.proxy` with `authenticated: true`,
+`route: relay`, and the HTTP/3 note from core.
+
+The upstream logs `error ConnectionError` twice: those are the two preflight connections
+(the browser start and the capture each check that the proxy is reachable), closed at once.

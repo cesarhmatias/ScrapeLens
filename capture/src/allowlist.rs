@@ -1075,3 +1075,17 @@ mod tests {
         assert_eq!(redact_url("https://x.test/a#access_token=Z"), "https://x.test/a?…");
     }
 }
+
+#[cfg(test)]
+mod destination_tests {
+    use super::*;
+
+    #[test]
+    fn permits_destination_checks_host_and_port_like_the_resolver_does() {
+        let al = Allowlist::new(&["site-a.test:18701".to_string()], &[]).unwrap();
+        assert!(al.permits_destination("site-a.test", 18701), "allowed host and port");
+        assert!(al.permits_destination("SITE-A.test", 18701), "host is case-insensitive");
+        assert!(!al.permits_destination("site-a.test", 443), "other port refused");
+        assert!(!al.permits_destination("accounts.google.com", 443), "other host refused");
+    }
+}

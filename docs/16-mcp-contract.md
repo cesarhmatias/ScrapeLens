@@ -402,9 +402,29 @@ Five tools connect `scrapelens-capture` (`capture/`) and `scrapelens-recon`
 §5). Dependencies by path; the server reimplements nothing of the capture.
 
 - `start_capture {allowed_hosts[], third_party_hosts?[], start_url?,
-  binary_path?, headless?, expose_cdp?}` → `StartInfo` (no paths) +
+  binary_path?, headless?, expose_cdp?, proxy?}` → `StartInfo` (no paths) +
   `captureId`, `sessionId` (the directory name the session will have in
   `--sessions-dir`) and `confirmation` (`elicited` | `unconfirmed-flag`).
+- **`proxy`** (optional string): `http://`, `https://`, `socks5://`, `socks5h://`,
+  `host:port` (same as `http://`), `user:pass@host:port`, or `host:port:user:pass`.
+  Credentials are percent-decoded; IPv6 goes in brackets; socks4, paths, queries and
+  fragments are refused. `"env"` reads the server's `SCRAPELENS_PROXY_URL` and is the
+  recommended way when the proxy has credentials: the password then never passes
+  through the model. The variable is applied only when `"env"` is requested.
+  The confirmation shows `scheme://host:port` and whether the link is authenticated,
+  never the credentials. Refusals: `proxy_invalid` (the message never echoes the link),
+  `proxy_env_missing`, and `proxy_unavailable` (the proxy cannot be reached, or https
+  with credentials/allowlist; the message gives the next step).
+  Route: no credentials and no allowlist → Chrome gets `--proxy-server=scheme://host:port`
+  directly. Credentials, or any allowlist (always, for `start_capture`) → Chrome talks to
+  a local relay on `127.0.0.1` (random port, no auth); the relay adds the credentials and
+  refuses, before contacting the upstream, any host:port the allowlist does not permit.
+  With a proxy, WebRTC is kept behind it (`disable_non_proxied_udp`); a proxied capture
+  has no HTTP/3 (the session says so). Session: `capture.proxy` (`scheme`,
+  `authenticated`, and in the full export `host`, `port`, `route`); no credential is
+  ever stored there, in an export, or in the output.
+  Out of scope: rotating proxies, lists, PAC, socks4, Keychain storage; the proxy is not
+  used by the exported cURL, Python or priming scripts.
 - `navigate {capture_id, url, wait?=load|none, timeout_ms?}` → `NavigateResult`.
   The allowlist refuses before sending (`url_not_allowed`).
 - `capture_status {capture_id}` → `recording`, `events`, `pageUrl`, `lastError`.

@@ -261,7 +261,7 @@ fn proxy_env_is_read_only_when_requested_and_never_shown() {
         format!("{:?}", via_env.config),
         format!("{:?}", link),
     ] {
-        assert!(!shown.contains(PASSWORD) && !shown.contains(USER) && !shown.contains(&base64), "{shown}");
+        assert!(!shown.contains(PASSWORD) && !shown.contains(USER) && !shown.contains(base64), "{shown}");
     }
     manager.release(&via_env.capture_id);
 
