@@ -1,7 +1,7 @@
 //! Proxy for live captures (App). The user gives one proxy link; the link's credentials
 //! stay in memory until the app closes. What crosses to the UI, to events, to errors and
 //! to the preferences file is only `scheme://host:port` and whether the link is
-//! authenticated. Contract: `/Users/cesar/OpenBot/Shared/sl-proxy-contract.md` (App).
+//! authenticated. Design notes: `docs/22-proxy.md`.
 
 use scrapelens_capture::proxy::ProxyLink;
 use serde::Serialize;

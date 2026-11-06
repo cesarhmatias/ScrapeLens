@@ -1,6 +1,6 @@
 // Proxy field and session header rules (no credentials ever reach this module: the backend
 // returns only the server address and whether the link is authenticated).
-// Contract: /Users/cesar/OpenBot/Shared/sl-proxy-contract.md, section App.
+// Design notes: docs/22-proxy.md.
 
 export interface ProxyInfo {
   serverUrl: string;
@@ -108,4 +108,20 @@ export function proxyHeaderView(proxy: ProxyRecordView | null | undefined): Prox
 
 function formatHost(host: string): string {
   return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+}
+
+/**
+ * Export notice for a session captured through a proxy. The generated cURL, Python and
+ * priming scripts do not use that proxy. The text never names the host or a credential.
+ * Sessions without `capture.proxy` get `null`: their export is unchanged.
+ */
+export function scriptProxyNotice(proxy: ProxyRecordView | null | undefined): string | null {
+  if (!proxy) return null;
+  return "This session was captured through a proxy. The generated script does not use it: the request may leave from another IP and behave differently. Run it only if that is what you want.";
+}
+
+/** Notice in the Export / Sanitize dialog. The sanitized copy keeps the proxy only as recorded. */
+export function sessionExportProxyNotice(proxy: ProxyRecordView | null | undefined): string | null {
+  if (!proxy) return null;
+  return "This session was captured through a proxy. Scripts made from this export (cURL, Python, priming) do not use that proxy.";
 }

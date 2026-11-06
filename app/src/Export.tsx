@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { bridge, type ExportPreview, type SanitizePreview, type SanitizeSaved, type SavedFile } from "./bridge";
 import type { RequestRecord, SessionRecord } from "./types";
+import { scriptProxyNotice, sessionExportProxyNotice } from "./proxyRules";
 
 const bodyStateLabel: Record<string, string> = {
   captured: "captured",
@@ -132,6 +133,7 @@ export function ExportDialog({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<SavedFile | null>(null);
   const redirectWarning = replayRedirectWarning(request);
+  const proxyNotice = scriptProxyNotice(session.capture?.proxy);
 
   useEffect(() => {
     if (!sessionDir) {
@@ -317,6 +319,12 @@ export function ExportDialog({
               <span>{redirectWarning}</span>
             </div>
           )}
+          {proxyNotice && (
+            <div className="body-flag flag-truncated" role="note" data-testid="export-proxy-notice">
+              <strong>Not through the capture proxy</strong>
+              <span>{proxyNotice}</span>
+            </div>
+          )}
           {saved && (
             <p className="export-saved mono" title={saved.path}>
               {saved.path}
@@ -442,6 +450,12 @@ export function SanitizeDialog({
         </>
       }
     >
+      {sessionExportProxyNotice(session.capture?.proxy) && (
+        <div className="body-flag flag-truncated" role="note" data-testid="export-proxy-notice">
+          <strong>Captured through a proxy</strong>
+          <span>{sessionExportProxyNotice(session.capture?.proxy)}</span>
+        </div>
+      )}
       <label className="export-sensitive-option">
         <input type="checkbox" data-testid="sanitize-include-sensitive"
           checked={includeSensitive} disabled={saving || !!saved}
