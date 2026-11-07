@@ -1,0 +1,99 @@
+# PR CI (T21): cargo test, clippy and npm test on Linux and macOS.
+# Runs on pull requests and on manual dispatch only. No release, no deploy, no secrets.
+name: PR CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_VERSION: "1.98.1"
+  NODE_VERSION: "26.8.1"
+
+jobs:
+  rust-linux:
+    name: Rust ${{ matrix.crate }} (Linux)
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [core, mcp, capture, recon, testserver, adapters/natural-ajax, src-tauri]
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config cmake clang libclang-dev perl \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev patchelf
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          components: clippy
+      - name: Test certificates (generated at test time, not tracked)
+        run: cargo run -q --locked --manifest-path testserver/Cargo.toml -- gen-cert
+      - name: cargo test
+        working-directory: ${{ matrix.crate }}
+        run: cargo test --locked
+      - name: cargo clippy
+        # testserver is excluded: it has nine clippy findings, the testserver lints are an allowlisted exception.
+        if: matrix.crate != 'testserver'
+        working-directory: ${{ matrix.crate }}
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+  rust-macos:
+    name: Rust ${{ matrix.crate }} (macOS)
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [core, mcp, capture, recon, testserver, adapters/natural-ajax, src-tauri]
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages
+        run: brew install cmake
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          components: clippy
+      - name: Test certificates (generated at test time, not tracked)
+        run: cargo run -q --locked --manifest-path testserver/Cargo.toml -- gen-cert
+      - name: cargo test
+        working-directory: ${{ matrix.crate }}
+        run: cargo test --locked
+      - name: cargo clippy
+        # testserver is excluded: it has nine clippy findings, the testserver lints are an allowlisted exception.
+        if: matrix.crate != 'testserver'
+        working-directory: ${{ matrix.crate }}
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+  app-npm:
+    name: App npm test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: npm ci
+        working-directory: app
+        run: npm ci --no-audit --no-fund
+      - name: typecheck
+        working-directory: app
+        run: npm run typecheck
+      - name: npm test
+        working-directory: app
+        run: npm test
