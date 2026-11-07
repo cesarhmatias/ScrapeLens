@@ -21,9 +21,9 @@ use scrapelens_core::{store, ImportedSession};
 use crate::capture::{self, CaptureConfig, CaptureSession, CaptureStatus};
 use crate::chrome::{self, ChromeInfo};
 use crate::cli;
-use crate::grants;
 #[cfg(feature = "test-hooks")]
 use crate::cli_test::CliAction;
+use crate::grants;
 use crate::prefs;
 use crate::AppState;
 
@@ -69,7 +69,8 @@ pub struct AttachmentPayload {
 
 fn demo_session_value() -> Result<Value, String> {
     let raw = include_str!("../../app/src/demo/session.v1.json");
-    let value: Value = serde_json::from_str(raw).map_err(|error| format!("invalid demo fixture: {error}"))?;
+    let value: Value =
+        serde_json::from_str(raw).map_err(|error| format!("invalid demo fixture: {error}"))?;
     Ok(value)
 }
 
@@ -105,13 +106,20 @@ pub fn demo_session() -> Result<SessionPayload, String> {
 /// picks the folder in the native dialog; cancelling returns `None`. The webview never supplies
 /// a path. This part already works and does not depend on the core to read the document.
 #[tauri::command]
-pub async fn open_session(app: AppHandle, token: Option<String>) -> Result<Option<SessionPayload>, String> {
+pub async fn open_session(
+    app: AppHandle,
+    token: Option<String>,
+) -> Result<Option<SessionPayload>, String> {
     let chosen = match token {
         Some(token) => grants::resolve(&token, &[grants::Kind::Session])?,
         None => {
             let dialog_app = app.clone();
             let picked = tauri::async_runtime::spawn_blocking(move || {
-                dialog_app.dialog().file().set_title("Open ScrapeLens session").blocking_pick_folder()
+                dialog_app
+                    .dialog()
+                    .file()
+                    .set_title("Open ScrapeLens session")
+                    .blocking_pick_folder()
             })
             .await
             .map_err(|error| format!("the dialog was interrupted: {error}"))?;
@@ -142,7 +150,9 @@ impl<'a> FlagGuard<'a> {
     /// `None` if the flag was already set (another operation is in progress).
     pub(crate) fn acquire(flag: &'a std::sync::atomic::AtomicBool) -> Option<Self> {
         use std::sync::atomic::Ordering;
-        flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).ok().map(|_| Self(flag))
+        flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .ok()
+            .map(|_| Self(flag))
     }
 }
 
@@ -160,8 +170,9 @@ where
 {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        let _guard = FlagGuard::acquire(&state.loading)
-            .ok_or_else(|| "A session is already being opened or imported. Wait for it to finish.".to_string())?;
+        let _guard = FlagGuard::acquire(&state.loading).ok_or_else(|| {
+            "A session is already being opened or imported. Wait for it to finish.".to_string()
+        })?;
         work(&app)
     })
     .await
@@ -186,7 +197,11 @@ fn read_session_payload(path: &str) -> Result<SessionPayload, String> {
     header_payload(&session_dir, |requests, partial| {
         format!(
             "Session opened: {requests} request(s){}.",
-            if partial { " · partial session, as declared by the source" } else { "" }
+            if partial {
+                " · partial session, as declared by the source"
+            } else {
+                ""
+            }
         )
     })
 }
@@ -206,14 +221,19 @@ pub(crate) fn header_payload(
         ));
     }
     let header = crate::listing::header_of(session)?;
-    let synthetic = session.session.labels.iter().any(|label| label == "synthetic-fixture");
+    let synthetic = session
+        .session
+        .labels
+        .iter()
+        .any(|label| label == "synthetic-fixture");
     let partial = serde_json::to_value(session.session.completeness.state)
         .ok()
         .and_then(|v| v.as_str().map(|s| s != "complete"))
         .unwrap_or(true);
     let requests = header.request_count;
     Ok(SessionPayload {
-        session: serde_json::to_value(&header).map_err(|error| format!("invalid header: {error}"))?,
+        session: serde_json::to_value(&header)
+            .map_err(|error| format!("invalid header: {error}"))?,
         session_dir: Some(session_dir.display().to_string()),
         session_token: Some(grants::issue(grants::Kind::Session, session_dir)?),
         synthetic,
@@ -233,7 +253,8 @@ pub async fn list_requests(
 ) -> Result<crate::listing::RequestPage, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let lazy = cached_session(Path::new(&session_dir))?;
-        let page = crate::listing::list_page(&lazy.session, offset, limit, &filter.unwrap_or_default());
+        let page =
+            crate::listing::list_page(&lazy.session, offset, limit, &filter.unwrap_or_default());
         // Test-hooks builds only: proves, without reading the screen, that the list came through the paginated contract.
         #[cfg(feature = "test-hooks")]
         {
@@ -333,8 +354,9 @@ fn read_import_file_max(path: &str, label: &str, max: u64) -> Result<Vec<u8>, St
     use std::io::Read;
     // O_NOFOLLOW + O_NONBLOCK (a FIFO does not block); type and size checked by fstat
     // on the descriptor itself, and the read uses the same descriptor (no TOCTOU).
-    let handle = open_beneath_parent(Path::new(path))
-        .map_err(|error| format!("{label} could not be opened at {path} (symlink is refused): {error}"))?;
+    let handle = open_beneath_parent(Path::new(path)).map_err(|error| {
+        format!("{label} could not be opened at {path} (symlink is refused): {error}")
+    })?;
     let metadata = handle
         .metadata()
         .map_err(|error| format!("{label}: failed to inspect {path}: {error}"))?;
@@ -357,7 +379,10 @@ fn read_import_file_max(path: &str, label: &str, max: u64) -> Result<Vec<u8>, St
         .read_to_end(&mut bytes)
         .map_err(|error| format!("could not read {label} at {path}: {error}"))?;
     if bytes.len() as u64 > max {
-        return Err(format!("{label} grew beyond {} MiB while being read", max / (1024 * 1024)));
+        return Err(format!(
+            "{label} grew beyond {} MiB while being read",
+            max / (1024 * 1024)
+        ));
     }
     Ok(bytes)
 }
@@ -369,13 +394,21 @@ pub(crate) fn open_beneath_parent(path: &Path) -> std::io::Result<fs::File> {
     use std::ffi::CString;
     use std::os::fd::FromRawFd;
     use std::os::unix::ffi::OsStrExt;
-    let invalid = |msg: &str| std::io::Error::new(std::io::ErrorKind::InvalidInput, msg.to_string());
-    let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).ok_or_else(|| invalid("no parent directory"))?;
+    let invalid =
+        |msg: &str| std::io::Error::new(std::io::ErrorKind::InvalidInput, msg.to_string());
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .ok_or_else(|| invalid("no parent directory"))?;
     let name = path.file_name().ok_or_else(|| invalid("no file name"))?;
-    let parent_c = CString::new(parent.as_os_str().as_bytes()).map_err(|_| invalid("NUL in the path"))?;
+    let parent_c =
+        CString::new(parent.as_os_str().as_bytes()).map_err(|_| invalid("NUL in the path"))?;
     let name_c = CString::new(name.as_bytes()).map_err(|_| invalid("NUL in the name"))?;
     let dir_fd = unsafe {
-        libc::open(parent_c.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        libc::open(
+            parent_c.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
     };
     if dir_fd < 0 {
         return Err(std::io::Error::last_os_error());
@@ -407,7 +440,11 @@ impl<'a, F: FnMut(bool)> StartingGuard<'a, F> {
     pub(crate) fn begin(flag: &'a std::sync::atomic::AtomicBool, mut notify: F) -> Self {
         flag.store(true, std::sync::atomic::Ordering::SeqCst);
         notify(true);
-        Self { flag, notify, committed: false }
+        Self {
+            flag,
+            notify,
+            committed: false,
+        }
     }
 
     pub(crate) fn commit(&mut self) {
@@ -433,14 +470,18 @@ pub(crate) fn ensure_not_recording(recording: bool) -> Result<(), String> {
     }
 }
 
-
 #[tauri::command]
 pub async fn import_har(app: AppHandle, path: String) -> Result<SessionPayload, String> {
     run_loading(app, move |app| {
-        ensure_not_recording(app.state::<AppState>().recording.load(std::sync::atomic::Ordering::SeqCst))?;
+        ensure_not_recording(
+            app.state::<AppState>()
+                .recording
+                .load(std::sync::atomic::Ordering::SeqCst),
+        )?;
         let bytes = read_import_file(&path, "HAR")?;
-        let imported = scrapelens_core::import_har(&bytes)
-            .map_err(|error| format!("invalid HAR: {error}. Use a HAR 1.2 file exported from Chrome."))?;
+        let imported = scrapelens_core::import_har(&bytes).map_err(|error| {
+            format!("invalid HAR: {error}. Use a HAR 1.2 file exported from Chrome.")
+        })?;
         persist_imported(app, imported, "HAR")
     })
     .await
@@ -449,7 +490,11 @@ pub async fn import_har(app: AppHandle, path: String) -> Result<SessionPayload, 
 #[tauri::command]
 pub async fn import_netlog(app: AppHandle, path: String) -> Result<SessionPayload, String> {
     run_loading(app, move |app| {
-        ensure_not_recording(app.state::<AppState>().recording.load(std::sync::atomic::Ordering::SeqCst))?;
+        ensure_not_recording(
+            app.state::<AppState>()
+                .recording
+                .load(std::sync::atomic::Ordering::SeqCst),
+        )?;
         let bytes = read_import_file(&path, "NetLog")?;
         let imported = scrapelens_core::import_netlog(&bytes)
             .map_err(|error| format!("invalid NetLog: {error}. Use the full JSON from Chrome."))?;
@@ -482,7 +527,14 @@ pub fn set_capture_start_url(app: AppHandle, url: String) -> Result<String, Stri
     if !trimmed.is_empty() {
         cli::validate_http_url(&trimmed)?;
     }
-    prefs::save_capture_start_url(&app, if trimmed.is_empty() { None } else { Some(trimmed.as_str()) })?;
+    prefs::save_capture_start_url(
+        &app,
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.as_str())
+        },
+    )?;
     Ok(trimmed)
 }
 
@@ -512,7 +564,12 @@ pub fn take_cli_action(_state: State<'_, AppState>) -> Option<CliActionPayload> 
 #[tauri::command]
 pub fn take_cli_action(state: State<'_, AppState>) -> Option<CliActionPayload> {
     if let Some((kind, message)) = state.cli_message.lock().ok()?.take() {
-        return Some(CliActionPayload { kind, path: String::new(), message: Some(message), token: None });
+        return Some(CliActionPayload {
+            kind,
+            path: String::new(),
+            message: Some(message),
+            token: None,
+        });
     }
     let action = state.pending_cli.lock().ok()?.take()?;
     let (kind, path) = match action {
@@ -522,11 +579,26 @@ pub fn take_cli_action(state: State<'_, AppState>) -> Option<CliActionPayload> {
     };
     if kind == "open-capture" {
         return Some(match grants::issue(grants::Kind::Session, &path) {
-            Ok(token) => CliActionPayload { kind: kind.to_string(), path: String::new(), message: None, token: Some(token) },
-            Err(message) => CliActionPayload { kind: "error".to_string(), path: String::new(), message: Some(message), token: None },
+            Ok(token) => CliActionPayload {
+                kind: kind.to_string(),
+                path: String::new(),
+                message: None,
+                token: Some(token),
+            },
+            Err(message) => CliActionPayload {
+                kind: "error".to_string(),
+                path: String::new(),
+                message: Some(message),
+                token: None,
+            },
         });
     }
-    Some(CliActionPayload { kind: kind.to_string(), path: path.display().to_string(), message: None, token: None })
+    Some(CliActionPayload {
+        kind: kind.to_string(),
+        path: path.display().to_string(),
+        message: None,
+        token: None,
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -541,8 +613,13 @@ pub struct CookieSourceDto {
 
 impl From<scrapelens_capture::BrowserCookieSource> for CookieSourceDto {
     fn from(source: scrapelens_capture::BrowserCookieSource) -> Self {
-        Self { id: source.id, browser: source.browser, profile: source.profile,
-            label: source.label, kind: source.kind }
+        Self {
+            id: source.id,
+            browser: source.browser,
+            profile: source.profile,
+            label: source.label,
+            kind: source.kind,
+        }
     }
 }
 
@@ -553,28 +630,45 @@ pub struct CookieSourcesPayload {
     selected: Option<String>,
 }
 
-fn resolve_cookie_source<'a>(source: Option<&str>, sources: &'a [CookieSourceDto]) -> Result<Option<&'a CookieSourceDto>, String> {
+fn resolve_cookie_source<'a>(
+    source: Option<&str>,
+    sources: &'a [CookieSourceDto],
+) -> Result<Option<&'a CookieSourceDto>, String> {
     match source.filter(|value| !value.is_empty()) {
         None => Ok(None),
-        Some(id) => sources.iter().find(|item| item.id == id).map(Some)
-            .ok_or_else(|| "Cookie source unavailable. Select another browser or a clean session.".to_string()),
+        Some(id) => sources
+            .iter()
+            .find(|item| item.id == id)
+            .map(Some)
+            .ok_or_else(|| {
+                "Cookie source unavailable. Select another browser or a clean session.".to_string()
+            }),
     }
 }
 
 fn cookie_sources() -> Vec<CookieSourceDto> {
-    scrapelens_capture::list_browser_cookie_sources().into_iter().map(Into::into).collect()
+    scrapelens_capture::list_browser_cookie_sources()
+        .into_iter()
+        .map(Into::into)
+        .collect()
 }
 
 #[tauri::command]
 pub fn list_cookie_sources(app: AppHandle) -> CookieSourcesPayload {
     let sources = cookie_sources();
     let saved = prefs::load_capture_cookie_source(&app);
-    let selected = resolve_cookie_source(saved.as_deref(), &sources).ok().flatten().map(|s| s.id.clone());
+    let selected = resolve_cookie_source(saved.as_deref(), &sources)
+        .ok()
+        .flatten()
+        .map(|s| s.id.clone());
     CookieSourcesPayload { sources, selected }
 }
 
 #[tauri::command]
-pub fn set_capture_cookie_source(app: AppHandle, source: Option<String>) -> Result<Option<String>, String> {
+pub fn set_capture_cookie_source(
+    app: AppHandle,
+    source: Option<String>,
+) -> Result<Option<String>, String> {
     let sources = cookie_sources();
     let selected = resolve_cookie_source(source.as_deref(), &sources)?.map(|s| s.id.clone());
     prefs::save_capture_cookie_source(&app, selected.as_deref())?;
@@ -583,9 +677,19 @@ pub fn set_capture_cookie_source(app: AppHandle, source: Option<String>) -> Resu
 
 /// The Proxy field's state. No credentials in it.
 #[tauri::command]
-pub fn get_proxy_state(app: AppHandle, state: State<'_, AppState>) -> Result<crate::capture_proxy::ProxyState, String> {
-    let active = state.proxy.lock().map_err(|_| "proxy state unavailable")?.clone();
-    Ok(crate::capture_proxy::state(prefs::load_capture_proxy(&app), active.as_ref()))
+pub fn get_proxy_state(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<crate::capture_proxy::ProxyState, String> {
+    let active = state
+        .proxy
+        .lock()
+        .map_err(|_| "proxy state unavailable")?
+        .clone();
+    Ok(crate::capture_proxy::state(
+        prefs::load_capture_proxy(&app),
+        active.as_ref(),
+    ))
 }
 
 /// Parses the link with the capture's own parser, keeps it in memory and saves only its
@@ -623,7 +727,8 @@ fn parse_and_store(
     slot: &std::sync::Mutex<Option<scrapelens_capture::proxy::ProxyLink>>,
     text: &str,
 ) -> Result<scrapelens_capture::proxy::ProxyLink, String> {
-    let link = scrapelens_capture::proxy::ProxyLink::parse(text).map_err(|error| error.to_string())?;
+    let link =
+        scrapelens_capture::proxy::ProxyLink::parse(text).map_err(|error| error.to_string())?;
     *slot.lock().map_err(|_| "proxy state unavailable")? = Some(link.clone());
     Ok(link)
 }
@@ -675,25 +780,44 @@ pub fn start_session(
     // "starting" (A9-B8/A8-B7): the menu disables ⌘⇧R and imports right away;
     // if the start fails, `StartingGuard` re-enables them.
     if state.recording.load(std::sync::atomic::Ordering::SeqCst) {
-        return Err("A capture is already in progress or starting. Click Stop before starting another.".to_string());
+        return Err(
+            "A capture is already in progress or starting. Click Stop before starting another."
+                .to_string(),
+        );
     }
     // The saved server is the authority: a saved proxy whose password is not in memory
     // stops the start here, before Chrome is launched.
     let proxy = {
-        let active = state.proxy.lock().map_err(|_| "proxy state unavailable")?.clone();
-        crate::capture_proxy::resolve_for_start(prefs::load_capture_proxy(&app).as_deref(), active.as_ref())?
+        let active = state
+            .proxy
+            .lock()
+            .map_err(|_| "proxy state unavailable")?
+            .clone();
+        crate::capture_proxy::resolve_for_start(
+            prefs::load_capture_proxy(&app).as_deref(),
+            active.as_ref(),
+        )?
     };
     let menu_app = app.clone();
     let mut starting = StartingGuard::begin(&state.recording, move |recording| {
         crate::menu::set_recording_menu(&menu_app, recording)
     });
-    let slot = state.capture.lock().map_err(|_| "capture state unavailable")?;
+    let slot = state
+        .capture
+        .lock()
+        .map_err(|_| "capture state unavailable")?;
     if slot.is_some() {
-        return Err("A capture is already in progress. Click Stop before starting another.".to_string());
+        return Err(
+            "A capture is already in progress. Click Stop before starting another.".to_string(),
+        );
     }
 
     let chrome_path = {
-        let saved = state.chrome_path.lock().map_err(|_| "Chrome state unavailable")?.clone();
+        let saved = state
+            .chrome_path
+            .lock()
+            .map_err(|_| "Chrome state unavailable")?
+            .clone();
         chrome::detect(saved.as_deref())
             .path
             .map(PathBuf::from)
@@ -706,15 +830,27 @@ pub fn start_session(
     let resolved_url = cli::resolve_capture_start_url(start_url.as_deref())?;
     // The UI sends the choice explicitly; absence means a clean session.
     let sources = cookie_sources();
-    let selected_cookie_source = if resolved_url == "about:blank" { None } else {
+    let selected_cookie_source = if resolved_url == "about:blank" {
+        None
+    } else {
         resolve_cookie_source(cookie_source.as_deref(), &sources)?
     };
-    let cookie_notice = selected_cookie_source.map(|source| format!(
-        " Cookies from {} loaded for the starting URL's site.", source.label
-    )).unwrap_or_default();
+    let cookie_notice = selected_cookie_source
+        .map(|source| {
+            format!(
+                " Cookies from {} loaded for the starting URL's site.",
+                source.label
+            )
+        })
+        .unwrap_or_default();
     let proxy_notice = proxy
         .as_ref()
-        .map(|link| format!(" Through the proxy {} (no credentials shown).", link.server_url()))
+        .map(|link| {
+            format!(
+                " Through the proxy {} (no credentials shown).",
+                link.server_url()
+            )
+        })
         .unwrap_or_default();
 
     let now = SystemTime::now()
@@ -794,18 +930,21 @@ pub fn start_session(
         session_dir: Some(dir.display().to_string()),
         session_token: Some(grants::issue(grants::Kind::Session, &dir)?),
         synthetic: false,
-        notice: Some((if start_url_for_notice == "about:blank" {
-            format!(
+        notice: Some(
+            (if start_url_for_notice == "about:blank" {
+                format!(
                 "Capture started with external Chrome at {}. The capture started blank; browse in Chrome or enter a URL.",
                 chrome_path.display()
             )
-        } else {
-            format!(
+            } else {
+                format!(
                 "Capture started with external Chrome at {} · {}. Click Stop to record the session.",
                 chrome_path.display(),
                 start_url_for_notice
             )
-        }) + &cookie_notice + &proxy_notice),
+            }) + &cookie_notice
+                + &proxy_notice,
+        ),
         cookie_import: None,
         pending: false,
     })
@@ -825,10 +964,15 @@ pub async fn stop_session(app: AppHandle) -> Result<SessionPayload, String> {
 fn stop_blocking(app: &AppHandle) -> Result<SessionPayload, String> {
     let state = app.state::<AppState>();
     let capture = {
-        let mut slot = state.capture.lock().map_err(|_| "capture state unavailable")?;
+        let mut slot = state
+            .capture
+            .lock()
+            .map_err(|_| "capture state unavailable")?;
         slot.take()
     };
-    state.recording.store(false, std::sync::atomic::Ordering::SeqCst);
+    state
+        .recording
+        .store(false, std::sync::atomic::Ordering::SeqCst);
     crate::menu::set_recording_menu(app, false);
     let Some(capture) = capture else {
         return Err("No capture in progress to stop.".to_string());
@@ -846,11 +990,15 @@ fn stop_blocking(app: &AppHandle) -> Result<SessionPayload, String> {
 
 #[tauri::command]
 pub fn capture_status(state: State<'_, AppState>) -> Option<CaptureStatus> {
-    state
-        .capture
-        .lock()
-        .ok()
-        .and_then(|slot| slot.as_ref().map(|capture| capture.status.lock().map(|status| status.clone()).unwrap_or_default()))
+    state.capture.lock().ok().and_then(|slot| {
+        slot.as_ref().map(|capture| {
+            capture
+                .status
+                .lock()
+                .map(|status| status.clone())
+                .unwrap_or_default()
+        })
+    })
 }
 
 fn iso_now() -> String {
@@ -875,7 +1023,8 @@ fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
     let z = days_since_epoch + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
     let day_of_era = z - era * 146_097;
-    let year_of_era = (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
     let year = year_of_era + era * 400;
     let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
     let month_prime = (5 * day_of_year + 2) / 153;
@@ -888,7 +1037,11 @@ fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
 #[tauri::command]
 pub fn detect_chrome(state: State<'_, AppState>) -> ChromeStatus {
     let saved = state.chrome_path.lock().expect("chrome_path lock").clone();
-    let notice = state.chrome_notice.lock().expect("chrome_notice lock").clone();
+    let notice = state
+        .chrome_notice
+        .lock()
+        .expect("chrome_notice lock")
+        .clone();
     let mut info = chrome::detect(saved.as_deref());
     // `detect` takes the first file it finds; keep only a browser the App accepts.
     let refused = info
@@ -1015,35 +1168,55 @@ static SESSION_CACHE: Mutex<Vec<CachedSession>> = Mutex::new(Vec::new());
 static SESSION_LOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 fn session_fingerprint(path: &Path) -> Vec<Option<(u64, SystemTime)>> {
-    let stat = |p: PathBuf| fs::metadata(p).ok().and_then(|meta| Some((meta.len(), meta.modified().ok()?)));
+    let stat = |p: PathBuf| {
+        fs::metadata(p)
+            .ok()
+            .and_then(|meta| Some((meta.len(), meta.modified().ok()?)))
+    };
     if path.is_file() {
         let parent = path.parent().map(Path::to_path_buf).unwrap_or_default();
         return vec![stat(path.to_path_buf()), stat(parent.join("attachments"))];
     }
-    ["session.json", "attachments"].iter().map(|name| stat(path.join(name))).collect()
+    ["session.json", "attachments"]
+        .iter()
+        .map(|name| stat(path.join(name)))
+        .collect()
 }
 
 /// Session file with any name: read typed as a stream (no `Value`),
 /// opened through the parent without following symlinks; attachments are relative to the file's folder.
 fn open_session_file_lazy(file: &Path) -> Result<scrapelens_core::lazy::LazySession, String> {
-    let handle = open_beneath_parent(file)
-        .map_err(|error| format!("could not open {} (symlink is refused): {error}", file.display()))?;
-    let meta = handle.metadata().map_err(|error| format!("failed to inspect {}: {error}", file.display()))?;
+    let handle = open_beneath_parent(file).map_err(|error| {
+        format!(
+            "could not open {} (symlink is refused): {error}",
+            file.display()
+        )
+    })?;
+    let meta = handle
+        .metadata()
+        .map_err(|error| format!("failed to inspect {}: {error}", file.display()))?;
     if !meta.is_file() {
         return Err(format!("{} is not a regular file", file.display()));
     }
     let session: scrapelens_core::model::SessionV1 =
         serde_json::from_reader(std::io::BufReader::with_capacity(1 << 20, handle))
             .map_err(|error| format!("invalid session file: {error}"))?;
-    let parent = file.parent().map(Path::to_path_buf).ok_or("the file has no parent folder")?;
+    let parent = file
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or("the file has no parent folder")?;
     Ok(scrapelens_core::lazy::LazySession::new(session, parent))
 }
 
-pub(crate) fn cached_session(dir: &Path) -> Result<Arc<scrapelens_core::lazy::LazySession>, String> {
+pub(crate) fn cached_session(
+    dir: &Path,
+) -> Result<Arc<scrapelens_core::lazy::LazySession>, String> {
     // Canonical key: `./s`, `s` and symlinks to the same folder share the entry.
     let canonical = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
     let dir = canonical.as_path();
-    let mut guard = SESSION_CACHE.lock().map_err(|_| "search cache corrupted".to_string())?;
+    let mut guard = SESSION_CACHE
+        .lock()
+        .map_err(|_| "search cache corrupted".to_string())?;
     let fingerprint = session_fingerprint(dir);
     if let Some(index) = guard.iter().position(|cached| cached.dir == dir) {
         if guard[index].fingerprint == fingerprint {
@@ -1066,7 +1239,11 @@ pub(crate) fn cached_session(dir: &Path) -> Result<Arc<scrapelens_core::lazy::La
             .0
     };
     let lazy = Arc::new(lazy);
-    guard.push(CachedSession { dir: dir.to_path_buf(), fingerprint, lazy: lazy.clone() });
+    guard.push(CachedSession {
+        dir: dir.to_path_buf(),
+        fingerprint,
+        lazy: lazy.clone(),
+    });
     Ok(lazy)
 }
 
@@ -1115,15 +1292,23 @@ const HEX_PREVIEW_BYTES: usize = 256;
 /// shows it in `<pre>`); the rest becomes only a size and a hex preview.
 /// The session folder behind a session token; a path or another kind of token is refused.
 fn session_dir_for_token(token: &str) -> Result<String, String> {
-    Ok(grants::resolve(token, &[grants::Kind::Session])?.display().to_string())
+    Ok(grants::resolve(token, &[grants::Kind::Session])?
+        .display()
+        .to_string())
 }
 
 #[tauri::command]
-pub async fn read_body(session_token: String, name: String, limit: Option<u64>) -> Result<BodyPayload, String> {
+pub async fn read_body(
+    session_token: String,
+    name: String,
+    limit: Option<u64>,
+) -> Result<BodyPayload, String> {
     let session_dir = session_dir_for_token(&session_token)?;
-    tauri::async_runtime::spawn_blocking(move || read_body_blocking(&session_dir, &name, limit.unwrap_or(262_144)))
-        .await
-        .map_err(|error| format!("the read was interrupted: {error}"))?
+    tauri::async_runtime::spawn_blocking(move || {
+        read_body_blocking(&session_dir, &name, limit.unwrap_or(262_144))
+    })
+    .await
+    .map_err(|error| format!("the read was interrupted: {error}"))?
 }
 
 fn read_body_blocking(session_dir: &str, name: &str, limit: u64) -> Result<BodyPayload, String> {
@@ -1231,7 +1416,9 @@ pub async fn adapter_view(
 
 /// Application timeline (`timeline::timeline`), with the app's adapter registry.
 #[tauri::command]
-pub async fn session_timeline(session_dir: String) -> Result<scrapelens_core::timeline::Timeline, String> {
+pub async fn session_timeline(
+    session_dir: String,
+) -> Result<scrapelens_core::timeline::Timeline, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let dir = Path::new(&session_dir);
         let rules = load_rules(dir)?;
@@ -1239,7 +1426,10 @@ pub async fn session_timeline(session_dir: String) -> Result<scrapelens_core::ti
         Ok(scrapelens_core::timeline::timeline(
             &lazy.session,
             &scrapelens_core::search::LazyBodies(&lazy),
-            &scrapelens_core::timeline::TimelineOptions { flow: crate::adapters::flow_options(), rules },
+            &scrapelens_core::timeline::TimelineOptions {
+                flow: crate::adapters::flow_options(),
+                rules,
+            },
         ))
     })
     .await
@@ -1256,7 +1446,10 @@ pub struct ValidationResult {
 }
 
 fn validation_root(app: &AppHandle) -> Result<PathBuf, String> {
-    let data = app.path().app_data_dir().map_err(|error| format!("no app data directory: {error}"))?;
+    let data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("no app data directory: {error}"))?;
     crate::validation::tmp_root(&data)
 }
 
@@ -1268,10 +1461,15 @@ pub fn discard_validation(app: AppHandle, trace_dir: String) -> Result<(), Strin
 
 /// "Keep this execution": copies the trace's session to a new folder and deletes the temporary one.
 #[tauri::command]
-pub async fn keep_validation(app: AppHandle, trace_dir: String, destination: String) -> Result<String, String> {
+pub async fn keep_validation(
+    app: AppHandle,
+    trace_dir: String,
+    destination: String,
+) -> Result<String, String> {
     let root = validation_root(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
-        crate::validation::keep(&root, Path::new(&trace_dir), Path::new(&destination)).map(|p| p.display().to_string())
+        crate::validation::keep(&root, Path::new(&trace_dir), Path::new(&destination))
+            .map(|p| p.display().to_string())
     })
     .await
     .map_err(|error| format!("saving failed: {error}"))?
@@ -1288,7 +1486,12 @@ pub async fn validate_execution(
 ) -> Result<ValidationResult, String> {
     let root = validation_root(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
-        validate_execution_blocking(&root, Path::new(&session_dir), &trace_path, map_origin.as_deref())
+        validate_execution_blocking(
+            &root,
+            Path::new(&session_dir),
+            &trace_path,
+            map_origin.as_deref(),
+        )
     })
     .await
     .map_err(|error| format!("the validation was interrupted: {error}"))?
@@ -1308,17 +1511,27 @@ fn validate_execution_blocking(
                 .ok_or_else(|| format!("invalid origin mapping ({text}); use <capture-origin>=<trace-origin>, for example https://app.example.com=http://127.0.0.1:8080"))?,
         ),
     };
-    let bytes = read_import_file_max(trace_path, "execution trace", crate::validation::TRACE_MAX_BYTES)?;
+    let bytes = read_import_file_max(
+        trace_path,
+        "execution trace",
+        crate::validation::TRACE_MAX_BYTES,
+    )?;
     let imported = scrapelens_core::parse::import_trace(&bytes).map_err(|error| {
         format!("invalid trace: {error}. Use the file generated by the priming script with --trace (scrapelens.trace/1).")
     })?;
-    let dir = unique_session_dir(root, &sanitize_dir_name(&imported.bundle.session.session.id));
+    let dir = unique_session_dir(
+        root,
+        &sanitize_dir_name(&imported.bundle.session.session.id),
+    );
     store::write_session_dir(&imported.bundle, &dir)
         .map_err(|error| format!("could not write the trace session: {error}"))?;
     let rules = load_rules(capture_dir)?;
     let capture = cached_session(capture_dir)?;
     let trace = cached_session(&dir)?;
-    let mut options = ValidateOptions { rules, ..Default::default() };
+    let mut options = ValidateOptions {
+        rules,
+        ..Default::default()
+    };
     options.compare.flow = crate::adapters::flow_options();
     // `plan.hash` is recalculated with the same adapters used for generation (the app always generates and validates with the adapter)
     options.compare.map_origin = map;
@@ -1372,28 +1585,48 @@ fn read_rules_file(path: &Path) -> Result<Option<String>, String> {
         Err(error) => return Err(format!("could not check {}: {error}", path.display())),
     };
     if before.file_type().is_symlink() || !before.is_file() {
-        return Err(format!("{} is not a regular file (symbolic link refused); remove it", path.display()));
+        return Err(format!(
+            "{} is not a regular file (symbolic link refused); remove it",
+            path.display()
+        ));
     }
-    let file = fs::File::open(path).map_err(|error| format!("could not read {}: {error}", path.display()))?;
-    let opened = file.metadata().map_err(|error| format!("could not read {}: {error}", path.display()))?;
+    let file = fs::File::open(path)
+        .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+    let opened = file
+        .metadata()
+        .map_err(|error| format!("could not read {}: {error}", path.display()))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         if opened.ino() != before.ino() || opened.dev() != before.dev() {
-            return Err(format!("{} changed while being opened; refused", path.display()));
+            return Err(format!(
+                "{} changed while being opened; refused",
+                path.display()
+            ));
         }
     }
     if !opened.is_file() || opened.len() > RULES_MAX_BYTES {
-        return Err(format!("{} exceeds 256 KiB or is not a regular file; reduce or remove the file", path.display()));
+        return Err(format!(
+            "{} exceeds 256 KiB or is not a regular file; reduce or remove the file",
+            path.display()
+        ));
     }
     let mut bytes = Vec::new();
     file.take(RULES_MAX_BYTES + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| format!("could not read {}: {error}", path.display()))?;
     if bytes.len() as u64 > RULES_MAX_BYTES {
-        return Err(format!("{} exceeds 256 KiB; reduce or remove the file", path.display()));
+        return Err(format!(
+            "{} exceeds 256 KiB; reduce or remove the file",
+            path.display()
+        ));
     }
-    String::from_utf8(bytes).map(Some).map_err(|_| format!("{} is not valid UTF-8; fix or remove the file", path.display()))
+    String::from_utf8(bytes).map(Some).map_err(|_| {
+        format!(
+            "{} is not valid UTF-8; fix or remove the file",
+            path.display()
+        )
+    })
 }
 
 pub(crate) fn assess_blocking(dir: &Path) -> Result<serde_json::Value, String> {
@@ -1401,10 +1634,16 @@ pub(crate) fn assess_blocking(dir: &Path) -> Result<serde_json::Value, String> {
     let rules_path = dir.join("assess-rules.json");
     let rules = load_rules(dir)?;
     let lazy = cached_session(dir)?;
-    let outcomes = assess_session(&lazy.session, &scrapelens_core::search::LazyBodies(&lazy), &rules);
+    let outcomes = assess_session(
+        &lazy.session,
+        &scrapelens_core::search::LazyBodies(&lazy),
+        &rules,
+    );
     let mut counts = std::collections::BTreeMap::<String, usize>::new();
     for outcome in &outcomes {
-        *counts.entry(outcome.verdict_kind.count_key().to_string()).or_default() += 1;
+        *counts
+            .entry(outcome.verdict_kind.count_key().to_string())
+            .or_default() += 1;
     }
     Ok(serde_json::json!({
         "schema": "scrapelens.assess/1",
@@ -1502,24 +1741,38 @@ pub async fn compare_open(
     b_range: Option<String>,
 ) -> Result<CompareSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let options = compare_options(include_all.unwrap_or(false), a_range.as_deref(), b_range.as_deref())?;
+        let options = compare_options(
+            include_all.unwrap_or(false),
+            a_range.as_deref(),
+            b_range.as_deref(),
+        )?;
         open_comparison_with(&dir_a, &dir_b, options)
     })
-        .await
-        .map_err(|error| format!("the comparison was interrupted: {error}"))?
+    .await
+    .map_err(|error| format!("the comparison was interrupted: {error}"))?
 }
 
 /// Page of pairs (summaries, without fields).
 #[tauri::command]
-pub async fn compare_page(handle: u64, offset: usize, limit: usize, only_dynamic: bool) -> Result<ComparePage, String> {
-    tauri::async_runtime::spawn_blocking(move || comparison_page(handle, offset, limit, only_dynamic))
-        .await
-        .map_err(|error| format!("the read was interrupted: {error}"))?
+pub async fn compare_page(
+    handle: u64,
+    offset: usize,
+    limit: usize,
+    only_dynamic: bool,
+) -> Result<ComparePage, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        comparison_page(handle, offset, limit, only_dynamic)
+    })
+    .await
+    .map_err(|error| format!("the read was interrupted: {error}"))?
 }
 
 /// Fields of a pair (in source order), loaded on expansion.
 #[tauri::command]
-pub async fn compare_fields(handle: u64, index: usize) -> Result<Vec<scrapelens_core::compare::FieldDiff>, String> {
+pub async fn compare_fields(
+    handle: u64,
+    index: usize,
+) -> Result<Vec<scrapelens_core::compare::FieldDiff>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let result = stored_comparison(handle)?;
         result
@@ -1532,15 +1785,24 @@ pub async fn compare_fields(handle: u64, index: usize) -> Result<Vec<scrapelens_
     .map_err(|error| format!("the read was interrupted: {error}"))?
 }
 
-fn stored_comparison(handle: u64) -> Result<Arc<scrapelens_core::compare::SessionComparison>, String> {
-    let guard = COMPARISON.lock().map_err(|_| "comparison corrupted".to_string())?;
+fn stored_comparison(
+    handle: u64,
+) -> Result<Arc<scrapelens_core::compare::SessionComparison>, String> {
+    let guard = COMPARISON
+        .lock()
+        .map_err(|_| "comparison corrupted".to_string())?;
     match guard.as_ref() {
         Some(stored) if stored.id == handle => Ok(stored.result.clone()),
         _ => Err("this comparison was replaced by another; compare again".to_string()),
     }
 }
 
-fn comparison_page(handle: u64, offset: usize, limit: usize, only_dynamic: bool) -> Result<ComparePage, String> {
+fn comparison_page(
+    handle: u64,
+    offset: usize,
+    limit: usize,
+    only_dynamic: bool,
+) -> Result<ComparePage, String> {
     let result = stored_comparison(handle)?;
     let limit = limit.clamp(1, 500);
     let mut total = 0usize;
@@ -1594,7 +1856,11 @@ fn compare_options(
 
 #[cfg(test)]
 fn open_comparison(dir_a: &str, dir_b: &str) -> Result<CompareSummary, String> {
-    open_comparison_with(dir_a, dir_b, scrapelens_core::compare::CompareOptions::default())
+    open_comparison_with(
+        dir_a,
+        dir_b,
+        scrapelens_core::compare::CompareOptions::default(),
+    )
 }
 
 fn open_comparison_with(
@@ -1603,7 +1869,8 @@ fn open_comparison_with(
     options: scrapelens_core::compare::CompareOptions,
 ) -> Result<CompareSummary, String> {
     let canon = |label: &str, dir: &str| {
-        fs::canonicalize(dir).map_err(|error| format!("session {label} is inaccessible ({dir}): {error}"))
+        fs::canonicalize(dir)
+            .map_err(|error| format!("session {label} is inaccessible ({dir}): {error}"))
     };
     let a_path = canon("A", dir_a)?;
     let b_path = canon("B", dir_b)?;
@@ -1626,17 +1893,41 @@ fn open_comparison_with(
     let summary = CompareSummary {
         handle: id,
         pairs: result.pairs.len(),
-        dynamic_pairs: result.pairs.iter().filter(|pair| pair_is_dynamic(pair)).count(),
+        dynamic_pairs: result
+            .pairs
+            .iter()
+            .filter(|pair| pair_is_dynamic(pair))
+            .count(),
         counts: result.counts.clone(),
         parts_counts: result.parts_counts.clone(),
         redacted_fields: result.redacted_fields,
-        ambiguities: result.ambiguities.iter().take(ONLY_LIST_CAP).cloned().collect(),
+        ambiguities: result
+            .ambiguities
+            .iter()
+            .take(ONLY_LIST_CAP)
+            .cloned()
+            .collect(),
         warnings: result.warnings.clone(),
-        only_in_a: result.only_in_a.iter().take(ONLY_LIST_CAP).cloned().collect(),
+        only_in_a: result
+            .only_in_a
+            .iter()
+            .take(ONLY_LIST_CAP)
+            .cloned()
+            .collect(),
         only_in_a_total: result.only_in_a.len(),
-        only_in_b: result.only_in_b.iter().take(ONLY_LIST_CAP).cloned().collect(),
+        only_in_b: result
+            .only_in_b
+            .iter()
+            .take(ONLY_LIST_CAP)
+            .cloned()
+            .collect(),
         only_in_b_total: result.only_in_b.len(),
-        reordered: result.reordered.iter().take(ONLY_LIST_CAP).cloned().collect(),
+        reordered: result
+            .reordered
+            .iter()
+            .take(ONLY_LIST_CAP)
+            .cloned()
+            .collect(),
         reordered_total: result.reordered.len(),
         rounds: result.rounds.clone(),
         unpaired_rounds: result.unpaired_rounds.clone(),
@@ -1654,14 +1945,22 @@ fn open_comparison_with(
             .collect(),
         include_all: options.include_all,
     };
-    *COMPARISON.lock().map_err(|_| "comparison corrupted".to_string())? =
-        Some(StoredComparison { id, result: Arc::new(result) });
+    *COMPARISON
+        .lock()
+        .map_err(|_| "comparison corrupted".to_string())? = Some(StoredComparison {
+        id,
+        result: Arc::new(result),
+    });
     Ok(summary)
 }
 
 /// Priming script (full chain up to the request); uses the protocol adapter's encoder
 /// when it claims the field, and reports that in the preview.
-fn priming_preview(dir: &Path, request_id: &str, lenient_parts: bool) -> Result<crate::export::ExportPreview, String> {
+fn priming_preview(
+    dir: &Path,
+    request_id: &str,
+    lenient_parts: bool,
+) -> Result<crate::export::ExportPreview, String> {
     let lazy = cached_session(dir)?;
     let request = lazy
         .session
@@ -1740,7 +2039,13 @@ pub async fn export_request(
     lenient_parts: Option<bool>,
 ) -> Result<crate::export::ExportPreview, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        export_preview(Path::new(&session_dir), &request_id, &format, annotate_origins.unwrap_or(false), lenient_parts.unwrap_or(false))
+        export_preview(
+            Path::new(&session_dir),
+            &request_id,
+            &format,
+            annotate_origins.unwrap_or(false),
+            lenient_parts.unwrap_or(false),
+        )
     })
     .await
     .map_err(|error| format!("generating the export failed: {error}"))?
@@ -1758,8 +2063,16 @@ pub struct SavedExport {
 /// Writes the exported text to a new file (0600), refusing overwrites and symbolic links. The
 /// native save dialog is opened here, with the name the export proposes; cancelling returns `None`.
 #[tauri::command]
-pub async fn save_export_file(app: AppHandle, default_name: String, text: String) -> Result<Option<SavedExport>, String> {
-    let (filter_name, extension) = if default_name.ends_with(".py") { ("Python", "py") } else { ("Shell", "sh") };
+pub async fn save_export_file(
+    app: AppHandle,
+    default_name: String,
+    text: String,
+) -> Result<Option<SavedExport>, String> {
+    let (filter_name, extension) = if default_name.ends_with(".py") {
+        ("Python", "py")
+    } else {
+        ("Shell", "sh")
+    };
     let dialog_name = default_name.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
@@ -1786,15 +2099,27 @@ pub async fn save_export_file(app: AppHandle, default_name: String, text: String
 fn finish_save(target: &Path, text: &str) -> Result<SavedExport, String> {
     let saved = crate::export::write_text_file(target, text)?;
     let token = grants::issue(grants::Kind::SavedFile, target)?;
-    Ok(SavedExport { path: saved.path, bytes: saved.bytes, token })
+    Ok(SavedExport {
+        path: saved.path,
+        bytes: saved.bytes,
+        token,
+    })
 }
 
 /// Sanitization counts and warnings, without writing anything.
 #[tauri::command]
-pub async fn preview_sanitized(session_dir: String, include_sensitive: Option<bool>) -> Result<crate::export::SanitizePreview, String> {
-    tauri::async_runtime::spawn_blocking(move || crate::export::sanitize_preview_with_options(Path::new(&session_dir), include_sensitive.unwrap_or(false)))
-        .await
-        .map_err(|error| format!("the sanitization preview failed: {error}"))?
+pub async fn preview_sanitized(
+    session_dir: String,
+    include_sensitive: Option<bool>,
+) -> Result<crate::export::SanitizePreview, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::export::sanitize_preview_with_options(
+            Path::new(&session_dir),
+            include_sensitive.unwrap_or(false),
+        )
+    })
+    .await
+    .map_err(|error| format!("the sanitization preview failed: {error}"))?
 }
 
 /// What `save_sanitized` returns: the export's result, and a token for opening the new folder.
@@ -1814,7 +2139,11 @@ pub async fn save_sanitized(
     include_sensitive: Option<bool>,
 ) -> Result<SanitizeSavedDto, String> {
     let saved = tauri::async_runtime::spawn_blocking(move || {
-        crate::export::sanitize_to_with_options(Path::new(&session_dir), Path::new(&destination), include_sensitive.unwrap_or(false))
+        crate::export::sanitize_to_with_options(
+            Path::new(&session_dir),
+            Path::new(&destination),
+            include_sensitive.unwrap_or(false),
+        )
     })
     .await
     .map_err(|error| format!("sanitization failed: {error}"))??;
@@ -1840,7 +2169,10 @@ pub fn reveal_path(token: String) -> Result<(), String> {
         let status = if target.is_dir() {
             std::process::Command::new("open").arg(&target).status()
         } else {
-            std::process::Command::new("open").arg("-R").arg(&target).status()
+            std::process::Command::new("open")
+                .arg("-R")
+                .arg(&target)
+                .status()
         };
         match status {
             Ok(status) if status.success() => Ok(()),
@@ -1855,7 +2187,9 @@ pub fn reveal_path(token: String) -> Result<(), String> {
         match std::process::Command::new("xdg-open").arg(&dir).status() {
             Ok(status) if status.success() => Ok(()),
             Ok(status) => Err(format!("xdg-open exited with {status}")),
-            Err(error) => Err(format!("could not open the file manager (xdg-open): {error}")),
+            Err(error) => Err(format!(
+                "could not open the file manager (xdg-open): {error}"
+            )),
         }
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
@@ -1870,7 +2204,10 @@ fn reveal_dir(target: &std::path::Path) -> PathBuf {
     if target.is_dir() {
         target.to_path_buf()
     } else {
-        target.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("/"))
+        target
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("/"))
     }
 }
 
@@ -1887,20 +2224,29 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-
     #[test]
     fn import_read_uses_fd_refusing_symlink_fifo_and_dir() {
         use std::os::unix::fs::symlink;
-        let root = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!(
-            "scrapelens-fdread-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
-        ));
+        let root = std::fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!(
+                "scrapelens-fdread-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
         std::fs::create_dir_all(&root).unwrap();
         let file = root.join("a.har");
         std::fs::write(&file, b"{\"log\":{}}").unwrap();
-        assert_eq!(read_import_file_max(file.to_str().unwrap(), "HAR", 1024).unwrap(), b"{\"log\":{}}");
-        assert!(read_import_file_max(file.to_str().unwrap(), "HAR", 3).unwrap_err().contains("larger"));
+        assert_eq!(
+            read_import_file_max(file.to_str().unwrap(), "HAR", 1024).unwrap(),
+            b"{\"log\":{}}"
+        );
+        assert!(read_import_file_max(file.to_str().unwrap(), "HAR", 3)
+            .unwrap_err()
+            .contains("larger"));
         let link = root.join("l.har");
         symlink(&file, &link).unwrap();
         assert!(read_import_file_max(link.to_str().unwrap(), "HAR", 1024).is_err());
@@ -1908,25 +2254,37 @@ mod tests {
         let c = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
         assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
         // FIFO with no writer: O_NONBLOCK does not block; fstat refuses it for not being regular.
-        assert!(read_import_file_max(fifo.to_str().unwrap(), "HAR", 1024).unwrap_err().contains("regular"));
-        assert!(read_import_file_max(root.to_str().unwrap(), "HAR", 1024).unwrap_err().contains("directory"));
+        assert!(read_import_file_max(fifo.to_str().unwrap(), "HAR", 1024)
+            .unwrap_err()
+            .contains("regular"));
+        assert!(read_import_file_max(root.to_str().unwrap(), "HAR", 1024)
+            .unwrap_err()
+            .contains("directory"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn import_open_fails_when_parent_is_swapped_for_symlink() {
-        let root = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!(
-            "scrapelens-openat-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
-        ));
+        let root = std::fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!(
+                "scrapelens-openat-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
         std::fs::create_dir_all(root.join("dir")).unwrap();
         std::fs::create_dir_all(root.join("other")).unwrap();
         std::fs::write(root.join("dir/a.har"), b"good").unwrap();
         std::fs::write(root.join("other/a.har"), b"evil").unwrap();
         let path = root.join("dir/a.har");
         crate::cli::validate_absolute_regular_file(&path).unwrap();
-        assert_eq!(read_import_file_max(path.to_str().unwrap(), "HAR", 64).unwrap(), b"good");
+        assert_eq!(
+            read_import_file_max(path.to_str().unwrap(), "HAR", 64).unwrap(),
+            b"good"
+        );
         // swap the parent for a symlink after validation
         std::fs::rename(root.join("dir"), root.join("dir-old")).unwrap();
         std::os::unix::fs::symlink(root.join("other"), root.join("dir")).unwrap();
@@ -1938,15 +2296,24 @@ mod tests {
     fn second_open_is_refused_while_one_is_loading() {
         let flag = std::sync::atomic::AtomicBool::new(false);
         let first = FlagGuard::acquire(&flag).expect("first open");
-        assert!(FlagGuard::acquire(&flag).is_none(), "a second parallel open must be refused");
+        assert!(
+            FlagGuard::acquire(&flag).is_none(),
+            "a second parallel open must be refused"
+        );
         drop(first);
-        assert!(FlagGuard::acquire(&flag).is_some(), "released when finished");
+        assert!(
+            FlagGuard::acquire(&flag).is_some(),
+            "released when finished"
+        );
         let result = std::panic::catch_unwind(|| {
             let _g = FlagGuard::acquire(&flag).unwrap();
             panic!("open failed");
         });
         assert!(result.is_err());
-        assert!(!flag.load(std::sync::atomic::Ordering::SeqCst), "a panic also releases it");
+        assert!(
+            !flag.load(std::sync::atomic::Ordering::SeqCst),
+            "a panic also releases it"
+        );
     }
 
     #[test]
@@ -1967,38 +2334,61 @@ mod tests {
             let mut g = StartingGuard::begin(&flag, |r| calls.borrow_mut().push(r));
             g.commit();
         }
-        assert!(flag.load(Ordering::SeqCst), "a successful start keeps recording");
+        assert!(
+            flag.load(Ordering::SeqCst),
+            "a successful start keeps recording"
+        );
         assert_eq!(*calls.borrow(), vec![true]);
     }
 
     #[test]
     fn opens_session_file_with_any_name_but_not_symlink() {
-        let root = std::fs::canonicalize(std::env::temp_dir()).unwrap().join(format!(
-            "scrapelens-anyname-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
-        ));
+        let root = std::fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!(
+                "scrapelens-anyname-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
         std::fs::create_dir_all(&root).unwrap();
         let file = root.join("my-capture.json");
         std::fs::write(&file, MINIMAL_SESSION).unwrap();
         let payload = read_session_payload(file.to_str().unwrap()).unwrap();
         assert_eq!(payload.session["requestCount"], 0);
-        assert_eq!(payload.session.pointer("/session/id").unwrap(), "test-session");
+        assert_eq!(
+            payload.session.pointer("/session/id").unwrap(),
+            "test-session"
+        );
         assert_eq!(payload.session_dir.as_deref(), file.to_str());
-        let page = crate::listing::list_page(&cached_session(&file).unwrap().session, 0, 10, &Default::default());
+        let page = crate::listing::list_page(
+            &cached_session(&file).unwrap().session,
+            0,
+            10,
+            &Default::default(),
+        );
         assert_eq!(page.total, 0);
 
         let link = root.join("shortcut.json");
         std::os::unix::fs::symlink(&file, &link).unwrap();
-        assert!(read_session_payload(link.to_str().unwrap()).unwrap_err().contains("symlink"));
+        assert!(read_session_payload(link.to_str().unwrap())
+            .unwrap_err()
+            .contains("symlink"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn imports_are_refused_while_recording() {
-        assert!(ensure_not_recording(true).unwrap_err().contains("Stop the recording"));
+        assert!(ensure_not_recording(true)
+            .unwrap_err()
+            .contains("Stop the recording"));
         assert!(ensure_not_recording(false).is_ok());
-        assert_eq!(crate::menu::RECORDING_DISABLED_IDS, ["import-har", "import-netlog", "start-session"]);
+        assert_eq!(
+            crate::menu::RECORDING_DISABLED_IDS,
+            ["import-har", "import-netlog", "start-session"]
+        );
     }
 
     #[test]
@@ -2008,11 +2398,23 @@ mod tests {
         // start_session holds the lock (up to 35 s); the menu must respond right away.
         let _held = state.capture.lock().unwrap();
         let started = std::time::Instant::now();
-        assert!(!crate::menu::blocked_while_recording("start-session", &state.recording));
+        assert!(!crate::menu::blocked_while_recording(
+            "start-session",
+            &state.recording
+        ));
         state.recording.store(true, Ordering::SeqCst);
-        assert!(crate::menu::blocked_while_recording("start-session", &state.recording));
-        assert!(crate::menu::blocked_while_recording("import-har", &state.recording));
-        assert!(!crate::menu::blocked_while_recording("stop-session", &state.recording));
+        assert!(crate::menu::blocked_while_recording(
+            "start-session",
+            &state.recording
+        ));
+        assert!(crate::menu::blocked_while_recording(
+            "import-har",
+            &state.recording
+        ));
+        assert!(!crate::menu::blocked_while_recording(
+            "stop-session",
+            &state.recording
+        ));
         assert!(started.elapsed() < std::time::Duration::from_millis(100));
         let _ = AtomicBool::new(false);
     }
@@ -2053,7 +2455,10 @@ mod tests {
         assert_eq!(payload.session["schemaVersion"], 1);
         assert_eq!(payload.session["requestCount"], 0);
         assert_eq!(payload.session["requests"], serde_json::json!([]));
-        assert_eq!(payload.session.pointer("/session/id").unwrap(), "test-session");
+        assert_eq!(
+            payload.session.pointer("/session/id").unwrap(),
+            "test-session"
+        );
         assert!(payload.session_dir.is_some());
         fs::remove_dir_all(dir).ok();
     }
@@ -2081,10 +2486,13 @@ mod tests {
     fn attachment_preview_is_text_inside_attachments() {
         let dir = temp_session_dir("attachment");
         fs::write(dir.join("attachments/req.bin"), b"hello").unwrap();
-        let payload = read_attachment(dir.to_str().unwrap().to_string(), "req.bin".to_string()).unwrap();
+        let payload =
+            read_attachment(dir.to_str().unwrap().to_string(), "req.bin".to_string()).unwrap();
         assert_eq!(payload.kind, "text");
         assert_eq!(payload.text.as_deref(), Some("hello"));
-        assert!(read_attachment(dir.to_str().unwrap().to_string(), "../escape".to_string()).is_err());
+        assert!(
+            read_attachment(dir.to_str().unwrap().to_string(), "../escape".to_string()).is_err()
+        );
         fs::remove_dir_all(dir).ok();
     }
 
@@ -2094,7 +2502,9 @@ mod tests {
 
     fn fixture_session(name: &str, folder: &str, stem: &str) -> PathBuf {
         use scrapelens_core::correlate::CorrelationOptions;
-        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures").join(folder);
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../fixtures")
+            .join(folder);
         let read = |file: String| fs::read(fixtures.join(file)).unwrap();
         let imported = scrapelens_core::parse::import_capture_with_bodies(
             &read(format!("{stem}.cdp.jsonl")),
@@ -2113,13 +2523,37 @@ mod tests {
     fn search_session_finds_body_only_and_reports_partial() {
         let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = detran_session("search");
-        let found = run_search(dir.to_str().unwrap(), "cmd_consultar_placa", &[], false, None).unwrap();
+        let found = run_search(
+            dir.to_str().unwrap(),
+            "cmd_consultar_placa",
+            &[],
+            false,
+            None,
+        )
+        .unwrap();
         assert_eq!(found.matches.len(), 2);
-        assert!(found.matches.iter().all(|m| m.decoded && m.scope == scrapelens_core::search::Scope::RequestBody));
+        assert!(found
+            .matches
+            .iter()
+            .all(|m| m.decoded && m.scope == scrapelens_core::search::Scope::RequestBody));
         assert!(found.partial && !found.partial_attempts.is_empty());
-        let url_only = run_search(dir.to_str().unwrap(), "cmd_consultar_placa", &["url".into()], false, None).unwrap();
+        let url_only = run_search(
+            dir.to_str().unwrap(),
+            "cmd_consultar_placa",
+            &["url".into()],
+            false,
+            None,
+        )
+        .unwrap();
         assert!(url_only.matches.is_empty());
-        let capped = run_search(dir.to_str().unwrap(), "cmd_consultar_placa", &[], false, Some(1)).unwrap();
+        let capped = run_search(
+            dir.to_str().unwrap(),
+            "cmd_consultar_placa",
+            &[],
+            false,
+            Some(1),
+        )
+        .unwrap();
         assert_eq!(capped.matches.len(), 1);
         assert!(capped.limit_reached);
         assert!(run_search(dir.to_str().unwrap(), "x", &["nope".into()], false, None).is_err());
@@ -2154,7 +2588,10 @@ mod tests {
         let dir = detran_session("cache");
         let first = cached_session(&dir).unwrap();
         let second = cached_session(&dir).unwrap();
-        assert!(Arc::ptr_eq(&first, &second), "the second search must reuse the bundle");
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "the second search must reuse the bundle"
+        );
         // file changed (size/mtime) → reload
         let session_file = dir.join("session.json");
         let mut text = fs::read_to_string(&session_file).unwrap();
@@ -2180,14 +2617,20 @@ mod tests {
         std::os::unix::fs::symlink(outside.join("secret.txt"), att.join("link.bin")).unwrap();
         fs::write(att.join("ok.bin"), "ok").unwrap();
         let d = dir.to_str().unwrap();
-        assert!(read_body_blocking(d, "link.bin", 100).unwrap_err().contains("symbolic link"));
-        assert!(read_attachment(d.to_string(), "link.bin".to_string()).unwrap_err().contains("symbolic link"));
+        assert!(read_body_blocking(d, "link.bin", 100)
+            .unwrap_err()
+            .contains("symbolic link"));
+        assert!(read_attachment(d.to_string(), "link.bin".to_string())
+            .unwrap_err()
+            .contains("symbolic link"));
         assert_eq!(read_body_blocking(d, "ok.bin", 100).unwrap().kind, "text");
         // attachments/ folder as a link
         let dir2 = temp_session_dir("symlink2");
         fs::remove_dir_all(dir2.join("attachments")).unwrap();
         std::os::unix::fs::symlink(&att, dir2.join("attachments")).unwrap();
-        assert!(read_body_blocking(dir2.to_str().unwrap(), "ok.bin", 100).unwrap_err().contains("symbolic link"));
+        assert!(read_body_blocking(dir2.to_str().unwrap(), "ok.bin", 100)
+            .unwrap_err()
+            .contains("symbolic link"));
         // directory in place of a file
         fs::create_dir(att.join("sub")).unwrap();
         assert!(read_body_blocking(d, "sub", 100).is_err());
@@ -2204,7 +2647,20 @@ mod tests {
         for round in 1..=3 {
             let start = std::time::Instant::now();
             let found = run_search(&dir, "zzzz", &[], false, None).unwrap();
-            eprintln!("search {round}: {:?}, {} matches, loads={}, current_rss={}", start.elapsed(), found.matches.len(), SESSION_LOADS.load(std::sync::atomic::Ordering::SeqCst), String::from_utf8_lossy(&std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().unwrap().stdout).trim());
+            eprintln!(
+                "search {round}: {:?}, {} matches, loads={}, current_rss={}",
+                start.elapsed(),
+                found.matches.len(),
+                SESSION_LOADS.load(std::sync::atomic::Ordering::SeqCst),
+                String::from_utf8_lossy(
+                    &std::process::Command::new("ps")
+                        .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+                        .output()
+                        .unwrap()
+                        .stdout
+                )
+                .trim()
+            );
         }
     }
 
@@ -2216,9 +2672,13 @@ mod tests {
         let lazy = cached_session(&a).unwrap();
         let source = scrapelens_core::search::LazyBodies(&lazy);
         let options = scrapelens_core::flow::FlowOptions::default();
-        let origins = scrapelens_core::flow::value_origins(&lazy.session, &source, "cdp-r0011", &options).unwrap();
+        let origins =
+            scrapelens_core::flow::value_origins(&lazy.session, &source, "cdp-r0011", &options)
+                .unwrap();
         assert!(origins.values.iter().any(|v| v.field == "JSESSIONID"));
-        let chain = scrapelens_core::flow::priming_chain(&lazy.session, &source, "cdp-r0011", &options).unwrap();
+        let chain =
+            scrapelens_core::flow::priming_chain(&lazy.session, &source, "cdp-r0011", &options)
+                .unwrap();
         assert!(!chain.steps.is_empty() && !chain.protection.is_empty());
         let cmp = open_comparison(a.to_str().unwrap(), b.to_str().unwrap()).unwrap();
         assert!(cmp.counts.dynamic > 0 && cmp.pairs > 0);
@@ -2226,15 +2686,24 @@ mod tests {
         assert!(page.total <= cmp.pairs && page.items.len() <= 5 && !page.items.is_empty());
         let all = comparison_page(cmp.handle, 0, 500, false).unwrap();
         assert_eq!(all.total, cmp.pairs);
-        let fields = stored_comparison(cmp.handle).unwrap().pairs[page.items[0].index].fields.len();
+        let fields = stored_comparison(cmp.handle).unwrap().pairs[page.items[0].index]
+            .fields
+            .len();
         assert_eq!(fields, page.items[0].field_count);
         assert!(comparison_page(cmp.handle + 99, 0, 5, false).is_err());
         // the same session through different paths (./, symlink) is refused
         let same = a.to_str().unwrap().to_string();
-        assert!(open_comparison(&same, &format!("{same}/../{}", a.file_name().unwrap().to_str().unwrap())).unwrap_err().contains("same session"));
+        assert!(open_comparison(
+            &same,
+            &format!("{same}/../{}", a.file_name().unwrap().to_str().unwrap())
+        )
+        .unwrap_err()
+        .contains("same session"));
         let link = std::env::temp_dir().join(format!("sl-link-{}", std::process::id()));
         std::os::unix::fs::symlink(&a, &link).unwrap();
-        assert!(open_comparison(&same, link.to_str().unwrap()).unwrap_err().contains("same session"));
+        assert!(open_comparison(&same, link.to_str().unwrap())
+            .unwrap_err()
+            .contains("same session"));
         fs::remove_file(&link).ok();
         // both sessions stay cached at the same time
         let again = cached_session(&a).unwrap();
@@ -2256,9 +2725,27 @@ mod tests {
         let counts = result["counts"].as_object().unwrap();
         assert!(!counts.is_empty());
         for (key, value) in counts {
-            assert_eq!(value.as_u64().unwrap() as usize, outcomes.iter().filter(|o| o["verdictKind"] == key.as_str()).count(), "key {key} outside the schema");
+            assert_eq!(
+                value.as_u64().unwrap() as usize,
+                outcomes
+                    .iter()
+                    .filter(|o| o["verdictKind"] == key.as_str())
+                    .count(),
+                "key {key} outside the schema"
+            );
             // `undetermined` is the canonical verdict; `indeterminado` is the legacy value, still accepted.
-            assert!(["app-ok", "app-error", "blocked", "undetermined", "indeterminado", "not-assessed"].contains(&key.as_str()), "unexpected key: {key}");
+            assert!(
+                [
+                    "app-ok",
+                    "app-error",
+                    "blocked",
+                    "undetermined",
+                    "indeterminado",
+                    "not-assessed"
+                ]
+                .contains(&key.as_str()),
+                "unexpected key: {key}"
+            );
         }
         // invalid rules become an actionable error
         fs::write(dir.join("assess-rules.json"), "{\"schema\":\"x\"}").unwrap();
@@ -2286,7 +2773,12 @@ mod tests {
         .unwrap();
         let warned = assess_blocking(&dir).unwrap();
         let warnings = warned["warnings"].as_array().unwrap();
-        assert!(warnings.iter().any(|w| w.as_str().unwrap().contains("protectionPaths")), "{warnings:?}");
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.as_str().unwrap().contains("protectionPaths")),
+            "{warnings:?}"
+        );
         fs::remove_dir_all(dir).ok();
     }
 
@@ -2297,10 +2789,21 @@ mod tests {
         let d = Path::new(&dir);
         let plain = export_preview(d, "cdp-r0011", "curl", false, false).unwrap();
         let noted = export_preview(d, "cdp-r0011", "curl", true, false).unwrap();
-        let strip = |text: &str| text.lines().filter(|l| !l.trim_start().starts_with('#')).collect::<Vec<_>>().join("\n");
+        let strip = |text: &str| {
+            text.lines()
+                .filter(|l| !l.trim_start().starts_with('#'))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
         assert_eq!(strip(&plain.text), strip(&noted.text));
-        assert!(noted.text.len() > plain.text.len(), "there must be origin comments");
-        assert!(noted.warnings.iter().all(|w| w.code != "export.origins_unavailable"));
+        assert!(
+            noted.text.len() > plain.text.len(),
+            "there must be origin comments"
+        );
+        assert!(noted
+            .warnings
+            .iter()
+            .all(|w| w.code != "export.origins_unavailable"));
         fs::remove_dir_all(dir).ok();
     }
 
@@ -2315,8 +2818,12 @@ mod tests {
         let mut all = serde_json::Map::new();
         for format in ["curl", "python"] {
             for annotate in [false, true] {
-                let preview = export_preview(Path::new(&dir), &request, format, annotate, false).unwrap();
-                all.insert(format!("{format}-{annotate}"), serde_json::to_value(&preview).unwrap());
+                let preview =
+                    export_preview(Path::new(&dir), &request, format, annotate, false).unwrap();
+                all.insert(
+                    format!("{format}-{annotate}"),
+                    serde_json::to_value(&preview).unwrap(),
+                );
             }
         }
         fs::write(out, serde_json::to_string_pretty(&all).unwrap()).unwrap();
@@ -2328,7 +2835,11 @@ mod tests {
     fn large_compare_timing() {
         let rss = || {
             String::from_utf8_lossy(
-                &std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().unwrap().stdout,
+                &std::process::Command::new("ps")
+                    .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+                    .output()
+                    .unwrap()
+                    .stdout,
             )
             .trim()
             .to_string()
@@ -2340,9 +2851,15 @@ mod tests {
         let opened = start.elapsed();
         let filtered = comparison_page(summary.handle, 0, 50, summary.pairs > 500).unwrap();
         let first = start.elapsed();
-        eprintln!("1st page with the default filter (only dynamic if >500 pairs): {} item(s) of {}", filtered.items.len(), filtered.total);
+        eprintln!(
+            "1st page with the default filter (only dynamic if >500 pairs): {} item(s) of {}",
+            filtered.items.len(),
+            filtered.total
+        );
         let page = comparison_page(summary.handle, 0, 50, false).unwrap();
-        let fields = stored_comparison(summary.handle).unwrap().pairs[page.items[0].index].fields.len();
+        let fields = stored_comparison(summary.handle).unwrap().pairs[page.items[0].index]
+            .fields
+            .len();
         eprintln!(
             "pairs={} dynamic={} summary_json={}B page50_json={}B fields_of_1st_pair={} open={:?} 1st_page={:?} rss_kb={}",
             summary.pairs,
@@ -2361,7 +2878,10 @@ mod tests {
             &scrapelens_core::search::LazyBodies(&cached_session(Path::new(&b)).unwrap()),
             &scrapelens_core::compare::CompareOptions::default(),
         );
-        eprintln!("full_json_old={}B", serde_json::to_string(&full).unwrap().len());
+        eprintln!(
+            "full_json_old={}B",
+            serde_json::to_string(&full).unwrap().len()
+        );
     }
 
     #[test]
@@ -2379,8 +2899,14 @@ mod tests {
         let summary = open_comparison(a.to_str().unwrap(), b.to_str().unwrap()).unwrap();
         assert_eq!(summary.reordered_total, 1);
         assert_eq!(summary.reordered[0].a.request_id, "cdp-r0004");
-        assert!(summary.only_in_a.iter().any(|r| r.request_id == "cdp-r0004"));
-        assert!(summary.only_in_b.iter().any(|r| r.request_id == "cdp-r0004"));
+        assert!(summary
+            .only_in_a
+            .iter()
+            .any(|r| r.request_id == "cdp-r0004"));
+        assert!(summary
+            .only_in_b
+            .iter()
+            .any(|r| r.request_id == "cdp-r0004"));
         fs::remove_dir_all(a).ok();
         fs::remove_dir_all(b).ok();
     }
@@ -2396,7 +2922,9 @@ mod tests {
     fn real_shape_compare_reports_rounds_and_groups() {
         let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let har = |name: &str| {
-            let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/detran-pb-real-shape").join(name);
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../fixtures/detran-pb-real-shape")
+                .join(name);
             let imported = scrapelens_core::import_har(&fs::read(path).unwrap()).unwrap();
             let dir = temp_session_dir(&format!("rs-{name}"));
             fs::remove_dir_all(&dir).ok();
@@ -2407,7 +2935,10 @@ mod tests {
         let b = har("real-shape-2rounds.har");
         let summary = open_comparison(a.to_str().unwrap(), b.to_str().unwrap()).unwrap();
         assert!(!summary.rounds.is_empty());
-        assert!(!summary.unpaired_rounds.is_empty(), "B's 2nd round is left without a pair");
+        assert!(
+            !summary.unpaired_rounds.is_empty(),
+            "B's 2nd round is left without a pair"
+        );
         assert!(summary.groups.iter().any(|g| g.kind == "protection"));
         let all = open_comparison_with(
             a.to_str().unwrap(),
@@ -2421,7 +2952,11 @@ mod tests {
     }
 
     fn real_shape_session(name: &str) -> PathBuf {
-        let har = fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/detran-pb-real-shape/real-shape-1round.har")).unwrap();
+        let har = fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../fixtures/detran-pb-real-shape/real-shape-1round.har"),
+        )
+        .unwrap();
         let imported = scrapelens_core::parse::import_har(&har).unwrap();
         let dir = temp_session_dir(name);
         fs::remove_dir_all(&dir).ok();
@@ -2444,12 +2979,23 @@ mod tests {
         )
         .unwrap();
         let json = serde_json::to_string(&origins).unwrap();
-        assert!(json.contains("XML.delta") || json.contains("XML.p."), "no internal adapter names");
+        assert!(
+            json.contains("XML.delta") || json.contains("XML.p."),
+            "no internal adapter names"
+        );
         // structured view: raw + named parts
-        let request = lazy.session.requests.iter().find(|r| r.id == "har-0026").unwrap();
+        let request = lazy
+            .session
+            .requests
+            .iter()
+            .find(|r| r.id == "har-0026")
+            .unwrap();
         let view = crate::adapters::view(&lazy, request, "request").unwrap();
         assert!(!view.fields.is_empty() && view.fields[0].error.is_none());
-        assert!(view.fields[0].parts.iter().any(|p| p.name == "delta" || p.name.starts_with("p.")));
+        assert!(view.fields[0]
+            .parts
+            .iter()
+            .any(|p| p.name == "delta" || p.name.starts_with("p.")));
         assert!(!view.fields[0].raw.is_empty());
         assert!(crate::adapters::view(&lazy, request, "invalid-side").is_err());
         // the priming script uses the adapter's encoder and the preview says so
@@ -2468,26 +3014,51 @@ mod tests {
         let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = real_shape_session("natural-big");
         let name = {
-            let session: serde_json::Value = serde_json::from_slice(&fs::read(dir.join("session.json")).unwrap()).unwrap();
-            let req = session["requests"].as_array().unwrap().iter().find(|r| r["id"] == "har-0026").unwrap();
-            req["requestBody"]["attachment"].as_str().unwrap().to_string()
+            let session: serde_json::Value =
+                serde_json::from_slice(&fs::read(dir.join("session.json")).unwrap()).unwrap();
+            let req = session["requests"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["id"] == "har-0026")
+                .unwrap();
+            req["requestBody"]["attachment"]
+                .as_str()
+                .unwrap()
+                .to_string()
         };
         let big = format!("XML=v{}", "0".repeat(crate::adapters::MAX_FIELD_BYTES + 10));
         fs::write(dir.join("attachments").join(&name), big).unwrap();
         let lazy = cached_session(&dir).unwrap();
-        let request = lazy.session.requests.iter().find(|r| r.id == "har-0026").unwrap();
+        let request = lazy
+            .session
+            .requests
+            .iter()
+            .find(|r| r.id == "har-0026")
+            .unwrap();
         let view = crate::adapters::view(&lazy, request, "request").unwrap();
         assert_eq!(view.fields.len(), 1);
         let field = &view.fields[0];
         // needle must match `TOO_BIG_MESSAGE` in src-tauri/src/adapters.rs (not owned by this file)
-        assert!(field.error.as_deref().unwrap().contains("field too large for the adapter view"));
+        assert!(field
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("field too large for the adapter view"));
         assert!(field.parts.is_empty());
-        assert!(field.raw.starts_with("v000") && field.raw.len() < 70 * 1024, "raw cut, not whole");
+        assert!(
+            field.raw.starts_with("v000") && field.raw.len() < 70 * 1024,
+            "raw cut, not whole"
+        );
         fs::remove_dir_all(dir).ok();
     }
 
     fn sim_trace(name: &str) -> String {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("evidence/bodies-search").join(name).display().to_string()
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("evidence/bodies-search")
+            .join(name)
+            .display()
+            .to_string()
     }
 
     #[test]
@@ -2495,54 +3066,127 @@ mod tests {
         let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let capture = real_shape_session("timeline-cap");
         // timeline: application events with the adapter label and collapsed groups
-        let rt = tauri::async_runtime::block_on(session_timeline(capture.display().to_string())).unwrap();
+        let rt = tauri::async_runtime::block_on(session_timeline(capture.display().to_string()))
+            .unwrap();
         assert!(rt.counts.events > 0 && rt.counts.protection > 0);
         let json = serde_json::to_value(&rt).unwrap();
-        assert!(json["items"].as_array().unwrap().iter().any(|i| i["type"] == "group" && i["kind"] == "protection"));
-        assert!(json["items"].as_array().unwrap().iter().any(|i| i["label"].as_str().is_some_and(|l| l.contains("cmd_consultar_placa"))), "event label from the adapter");
+        assert!(json["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["type"] == "group" && i["kind"] == "protection"));
+        assert!(
+            json["items"].as_array().unwrap().iter().any(|i| i["label"]
+                .as_str()
+                .is_some_and(|l| l.contains("cmd_consultar_placa"))),
+            "event label from the adapter"
+        );
         // validation: trace ok = equivalent; 403 = diverges; trace in a new 0700 folder
         let root = temp_session_dir("timeline-root");
         fs::remove_dir_all(&root).ok();
         fs::create_dir_all(&root).unwrap();
-        let ok = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-ok.json"), None).unwrap();
-        assert!(ok.validation.summary.starts_with("execution equivalent to capture"), "{}", ok.validation.summary);
+        let ok =
+            validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-ok.json"), None)
+                .unwrap();
+        assert!(
+            ok.validation
+                .summary
+                .starts_with("execution equivalent to capture"),
+            "{}",
+            ok.validation.summary
+        );
         assert!(ok.validation.summary.contains("[mapped origin:"));
         // faithful trace (plan.version 2): no parameter or plan warning; only the mapped-origin one
         assert!(
-            ok.validation.warnings.iter().all(|w| w.starts_with("different application origins")),
+            ok.validation
+                .warnings
+                .iter()
+                .all(|w| w.starts_with("different application origins")),
             "a faithful trace must not generate warnings beyond the mapped-origin one: {:?}",
             ok.validation.warnings
         );
         assert!(
             // English and legacy Portuguese reason text (legacy matcher kept for old sessions).
-            !ok.validation.warnings.iter().any(|w| w.contains("parameter") || w.contains("plan") || w.contains("parâmetro") || w.contains("plano")),
+            !ok.validation
+                .warnings
+                .iter()
+                .any(|w| w.contains("parameter")
+                    || w.contains("plan")
+                    || w.contains("parâmetro")
+                    || w.contains("plano")),
             "spurious parameter/plan warnings: {:?}",
             ok.validation.warnings
         );
         assert!(
             // legacy Portuguese reason kept for old sessions
-            ok.validation.steps.iter().flat_map(|st| &st.expected).any(|n| n.reason.contains("user parameter") || n.reason.contains("parâmetro do usuário")),
+            ok.validation
+                .steps
+                .iter()
+                .flat_map(|st| &st.expected)
+                .any(|n| n.reason.contains("user parameter")
+                    || n.reason.contains("parâmetro do usuário")),
             "plate/CPF provided become expected (user parameter)"
         );
-        let bad = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-403.json"), None).unwrap();
-        assert!(bad.validation.summary.starts_with("diverges at step 3"), "{}", bad.validation.summary);
-        let down = validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-incomplete.json"), None).unwrap();
-        assert_eq!(serde_json::to_value(down.validation.verdict).unwrap(), "incomplete");
-        assert!(down.validation.summary.starts_with("incomplete: stopped at step 1"), "{}", down.validation.summary);
+        let bad =
+            validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-403.json"), None)
+                .unwrap();
+        assert!(
+            bad.validation.summary.starts_with("diverges at step 3"),
+            "{}",
+            bad.validation.summary
+        );
+        let down = validate_execution_blocking(
+            &root,
+            &capture,
+            &sim_trace("trace-sim-incomplete.json"),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(down.validation.verdict).unwrap(),
+            "incomplete"
+        );
+        assert!(
+            down.validation
+                .summary
+                .starts_with("incomplete: stopped at step 1"),
+            "{}",
+            down.validation.summary
+        );
         assert_ne!(ok.trace_dir, bad.trace_dir);
         use std::os::unix::fs::PermissionsExt;
-        assert_eq!(fs::metadata(&bad.trace_dir).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(
+            fs::metadata(&bad.trace_dir).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
         // actionable errors
         let invalid = root.join("not-a-trace.json");
         fs::write(&invalid, "{\"schema\":\"x\"}").unwrap();
-        assert!(validate_execution_blocking(&root, &capture, invalid.to_str().unwrap(), None).unwrap_err().contains("invalid trace"));
-        assert!(validate_execution_blocking(&root, &capture, &sim_trace("trace-sim-ok.json"), Some("no-equals-sign")).unwrap_err().contains("invalid origin mapping"));
-        assert!(validate_execution_blocking(&root, &capture, "/does/not/exist.json", None).is_err());
+        assert!(
+            validate_execution_blocking(&root, &capture, invalid.to_str().unwrap(), None)
+                .unwrap_err()
+                .contains("invalid trace")
+        );
+        assert!(validate_execution_blocking(
+            &root,
+            &capture,
+            &sim_trace("trace-sim-ok.json"),
+            Some("no-equals-sign")
+        )
+        .unwrap_err()
+        .contains("invalid origin mapping"));
+        assert!(
+            validate_execution_blocking(&root, &capture, "/does/not/exist.json", None).is_err()
+        );
         // trace above 64 MiB: actionable error, without reading or creating a session
         let huge = root.join("huge.json");
-        fs::File::create(&huge).unwrap().set_len(crate::validation::TRACE_MAX_BYTES + 1).unwrap();
+        fs::File::create(&huge)
+            .unwrap()
+            .set_len(crate::validation::TRACE_MAX_BYTES + 1)
+            .unwrap();
         let before = fs::read_dir(&root).unwrap().count();
-        let err = validate_execution_blocking(&root, &capture, huge.to_str().unwrap(), None).unwrap_err();
+        let err =
+            validate_execution_blocking(&root, &capture, huge.to_str().unwrap(), None).unwrap_err();
         assert!(err.contains("larger than 64 MiB"), "{err}");
         assert_eq!(fs::read_dir(&root).unwrap().count(), before);
         fs::remove_dir_all(capture).ok();
@@ -2558,12 +3202,24 @@ mod tests {
         let out = PathBuf::from(std::env::var("SL_DUMP").expect("SL_DUMP"));
         fs::create_dir_all(&out).unwrap();
         let t = tauri::async_runtime::block_on(session_timeline(dir.clone())).unwrap();
-        fs::write(out.join("timeline.json"), serde_json::to_string(&t).unwrap()).unwrap();
+        fs::write(
+            out.join("timeline.json"),
+            serde_json::to_string(&t).unwrap(),
+        )
+        .unwrap();
         let root = out.join("traces");
         fs::create_dir_all(&root).unwrap();
-        for (n, trace) in std::env::var("SL_TRACES").expect("SL_TRACES").split(',').enumerate() {
+        for (n, trace) in std::env::var("SL_TRACES")
+            .expect("SL_TRACES")
+            .split(',')
+            .enumerate()
+        {
             let r = validate_execution_blocking(&root, Path::new(&dir), trace, None).unwrap();
-            fs::write(out.join(format!("validate-{n}.json")), serde_json::to_string(&r).unwrap()).unwrap();
+            fs::write(
+                out.join(format!("validate-{n}.json")),
+                serde_json::to_string(&r).unwrap(),
+            )
+            .unwrap();
         }
     }
 
@@ -2580,17 +3236,35 @@ mod tests {
         let opts = crate::adapters::flow_options();
         for request in &lazy.session.requests {
             let id = &request.id;
-            let write = |name: &str, value: serde_json::Value| fs::write(out.join(format!("{id}.{name}.json")), serde_json::to_string(&value).unwrap()).unwrap();
-            if let Ok(o) = scrapelens_core::flow::value_origins(&lazy.session, &source, id, &opts) { write("origins", serde_json::to_value(o).unwrap()); }
-            if let Ok(c) = scrapelens_core::flow::priming_chain(&lazy.session, &source, id, &opts) { write("chain", serde_json::to_value(c).unwrap()); }
+            let write = |name: &str, value: serde_json::Value| {
+                fs::write(
+                    out.join(format!("{id}.{name}.json")),
+                    serde_json::to_string(&value).unwrap(),
+                )
+                .unwrap()
+            };
+            if let Ok(o) = scrapelens_core::flow::value_origins(&lazy.session, &source, id, &opts) {
+                write("origins", serde_json::to_value(o).unwrap());
+            }
+            if let Ok(c) = scrapelens_core::flow::priming_chain(&lazy.session, &source, id, &opts) {
+                write("chain", serde_json::to_value(c).unwrap());
+            }
             for side in ["request", "response"] {
                 if let Ok(v) = crate::adapters::view(&lazy, request, side) {
-                    if !v.fields.is_empty() { write(side, serde_json::to_value(v).unwrap()); }
+                    if !v.fields.is_empty() {
+                        write(side, serde_json::to_value(v).unwrap());
+                    }
                 }
             }
         }
         for id in ["har-0026"] {
-            if let Ok(p) = priming_preview(Path::new(&dir), id, false) { fs::write(out.join(format!("{id}.priming.json")), serde_json::to_string(&p).unwrap()).unwrap(); }
+            if let Ok(p) = priming_preview(Path::new(&dir), id, false) {
+                fs::write(
+                    out.join(format!("{id}.priming.json")),
+                    serde_json::to_string(&p).unwrap(),
+                )
+                .unwrap();
+            }
         }
     }
 
@@ -2633,7 +3307,9 @@ fn await_capture_ready<T: Send + 'static>(
             let error = match join.join() {
                 Ok(Err(error)) => error,
                 Ok(Ok(_)) => "The capture ended before Chrome was ready.".to_string(),
-                Err(_) => "The capture thread stopped unexpectedly before Chrome was ready.".to_string(),
+                Err(_) => {
+                    "The capture thread stopped unexpectedly before Chrome was ready.".to_string()
+                }
             };
             let _ = fs::remove_dir_all(dir);
             Err(error)
@@ -2689,7 +3365,8 @@ mod proxy_command_tests {
     #[test]
     fn a_valid_link_is_kept_in_memory_and_only_its_address_is_returned() {
         let slot: Mutex<Option<ProxyLink>> = Mutex::new(None);
-        let link = parse_and_store(&slot, "http://reader:Hunter2-secret@proxy.example:8080").unwrap();
+        let link =
+            parse_and_store(&slot, "http://reader:Hunter2-secret@proxy.example:8080").unwrap();
         assert_eq!(link.server_url(), "http://proxy.example:8080");
         let info = serde_json::to_string(&crate::capture_proxy::ProxyInfo::of(&link)).unwrap();
         assert!(!info.contains("Hunter2"), "{info}");
@@ -2710,9 +3387,15 @@ mod proxy_command_tests {
             let error = parse_and_store(&slot, input).unwrap_err();
             assert!(!error.contains("Hunter2"), "{error}");
             assert!(!error.contains("reader"), "{error}");
-            assert!(!error.contains("proxy.example"), "the input is not repeated: {error}");
+            assert!(
+                !error.contains("proxy.example"),
+                "the input is not repeated: {error}"
+            );
         }
-        assert!(slot.lock().unwrap().is_none(), "a refused link replaces nothing");
+        assert!(
+            slot.lock().unwrap().is_none(),
+            "a refused link replaces nothing"
+        );
     }
 
     #[test]
@@ -2738,8 +3421,12 @@ mod capture_start_tests {
     use std::time::Instant;
 
     fn temp_session_dir(name: &str) -> PathBuf {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!("sl-start-{name}-{}-{nanos}", std::process::id()));
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir =
+            std::env::temp_dir().join(format!("sl-start-{name}-{}-{nanos}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -2749,18 +3436,27 @@ mod capture_start_tests {
         let dir = temp_session_dir("early-error");
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
         let (stop_tx, _stop_rx) = mpsc::channel::<()>();
-        let message = "cookies could not be read: the profile database is locked; close Chrome and try again";
+        let message =
+            "cookies could not be read: the profile database is locked; close Chrome and try again";
         let join = thread::spawn(move || {
             // Same as `capture::run` returning early with `?` before signalling readiness.
             drop(ready_tx);
             Err::<(), String>(message.to_string())
         });
         let started = Instant::now();
-        let error = await_capture_ready(&ready_rx, &stop_tx, join, &dir, CAPTURE_READY_TIMEOUT).err().unwrap();
+        let error = await_capture_ready(&ready_rx, &stop_tx, join, &dir, CAPTURE_READY_TIMEOUT)
+            .err()
+            .unwrap();
         assert_eq!(error, message);
         assert!(!error.contains("not ready within"));
-        assert!(started.elapsed() < Duration::from_secs(5), "must not wait for the 35 s timeout");
-        assert!(!dir.exists(), "the session folder of a failed start is removed");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "must not wait for the 35 s timeout"
+        );
+        assert!(
+            !dir.exists(),
+            "the session folder of a failed start is removed"
+        );
     }
 
     #[test]
@@ -2774,13 +3470,18 @@ mod capture_start_tests {
             let _ = stop_rx.recv();
             Err::<(), String>("stopped".to_string())
         });
-        let error = await_capture_ready(&ready_rx, &stop_tx, join, &dir, Duration::from_millis(50)).err().unwrap();
+        let error = await_capture_ready(&ready_rx, &stop_tx, join, &dir, Duration::from_millis(50))
+            .err()
+            .unwrap();
         assert!(error.contains("not ready within"), "{error}");
         let deadline = Instant::now() + Duration::from_secs(5);
         while dir.exists() && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(10));
         }
-        assert!(!dir.exists(), "the reaper removes the folder after the thread ends");
+        assert!(
+            !dir.exists(),
+            "the reaper removes the folder after the thread ends"
+        );
     }
 
     #[test]
@@ -2803,10 +3504,18 @@ mod capture_start_tests {
         });
 
         let started = Instant::now();
-        let error = await_capture_ready(&ready_rx, &stop_tx, join, &dir, Duration::from_millis(50)).err().unwrap();
-        assert!(started.elapsed() < Duration::from_secs(5), "the start must not wait for the stuck thread");
+        let error = await_capture_ready(&ready_rx, &stop_tx, join, &dir, Duration::from_millis(50))
+            .err()
+            .unwrap();
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the start must not wait for the stuck thread"
+        );
         assert!(error.contains("not ready within"), "{error}");
-        assert!(dir.exists(), "the folder stays until the thread really ends");
+        assert!(
+            dir.exists(),
+            "the folder stays until the thread really ends"
+        );
 
         // The thread ends later: the reaper removes its folder and the stop request was sent.
         release_tx.send(()).unwrap();
@@ -2814,8 +3523,14 @@ mod capture_start_tests {
         while dir.exists() && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(10));
         }
-        assert!(!dir.exists(), "the reaper removes the folder once the thread ends");
-        assert!(stopped.load(Ordering::SeqCst), "the stop request reached the thread");
+        assert!(
+            !dir.exists(),
+            "the reaper removes the folder once the thread ends"
+        );
+        assert!(
+            stopped.load(Ordering::SeqCst),
+            "the stop request reached the thread"
+        );
     }
 
     #[test]
@@ -2828,7 +3543,8 @@ mod capture_start_tests {
             let _ = stop_rx.recv();
             Ok::<(), String>(())
         });
-        let join = await_capture_ready(&ready_rx, &stop_tx, join, &dir, CAPTURE_READY_TIMEOUT).expect("ready");
+        let join = await_capture_ready(&ready_rx, &stop_tx, join, &dir, CAPTURE_READY_TIMEOUT)
+            .expect("ready");
         let _ = stop_tx.send(());
         assert!(join.join().unwrap().is_ok());
         let _ = fs::remove_dir_all(&dir);
@@ -2841,16 +3557,26 @@ mod cookie_source_tests {
 
     #[test]
     fn validates_sources_without_exposing_database_path() {
-        let sources = vec![CookieSourceDto::from(scrapelens_capture::BrowserCookieSource {
-            id: "chrome:Default".into(), browser: "Google Chrome".into(),
-            profile: "Default".into(), label: "Google Chrome — Default".into(),
-            kind: scrapelens_capture::BrowserKind::Chromium,
-            db_path: PathBuf::from("/private/cookie-database"),
-        })];
+        let sources = vec![CookieSourceDto::from(
+            scrapelens_capture::BrowserCookieSource {
+                id: "chrome:Default".into(),
+                browser: "Google Chrome".into(),
+                profile: "Default".into(),
+                label: "Google Chrome — Default".into(),
+                kind: scrapelens_capture::BrowserKind::Chromium,
+                db_path: PathBuf::from("/private/cookie-database"),
+            },
+        )];
         assert!(resolve_cookie_source(None, &sources).unwrap().is_none());
         assert!(resolve_cookie_source(Some(""), &sources).unwrap().is_none());
         assert!(resolve_cookie_source(Some("chrome:deleted"), &sources).is_err());
-        assert_eq!(resolve_cookie_source(Some("chrome:Default"), &sources).unwrap().unwrap().id, "chrome:Default");
+        assert_eq!(
+            resolve_cookie_source(Some("chrome:Default"), &sources)
+                .unwrap()
+                .unwrap()
+                .id,
+            "chrome:Default"
+        );
         let json = serde_json::to_string(&sources).unwrap();
         assert!(!json.contains("dbPath") && !json.contains("cookie-database"));
     }
@@ -2863,7 +3589,10 @@ mod grant_tests {
     use std::fs;
 
     fn scratch(name: &str) -> PathBuf {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
         let dir = std::fs::canonicalize(std::env::temp_dir())
             .unwrap()
             .join(format!("sl-grant-{name}-{}-{nanos}", std::process::id()));
@@ -2921,8 +3650,14 @@ mod grant_tests {
         let saved = finish_save(&target, "#!/bin/sh\n").unwrap();
         assert_eq!(saved.bytes, 10);
         assert_eq!(reveal_target(&saved.token).unwrap(), target);
-        assert!(finish_save(&target, "again").is_err(), "an existing file is not overwritten");
-        assert_eq!(fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o600);
+        assert!(
+            finish_save(&target, "again").is_err(),
+            "an existing file is not overwritten"
+        );
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         fs::remove_dir_all(&dir).ok();
     }
 }

@@ -39,7 +39,9 @@ impl Registry {
             return Ok(token.clone());
         }
         if self.by_token.len() >= max {
-            return Err("too many files and folders were used in this run; restart ScrapeLens".to_string());
+            return Err(
+                "too many files and folders were used in this run; restart ScrapeLens".to_string(),
+            );
         }
         let token = new_token()?;
         self.by_token.insert(token.clone(), key.clone());
@@ -52,7 +54,9 @@ impl Registry {
     pub(crate) fn resolve(&self, token: &str, allowed: &[Kind]) -> Result<PathBuf, String> {
         match self.by_token.get(token) {
             Some((kind, path)) if allowed.contains(kind) => Ok(path.clone()),
-            _ => Err("this file or folder is not available to ScrapeLens; choose it again".to_string()),
+            _ => Err(
+                "this file or folder is not available to ScrapeLens; choose it again".to_string(),
+            ),
         }
     }
 }
@@ -64,13 +68,17 @@ fn registry() -> &'static Mutex<Registry> {
 
 /// Token for a path the backend chose (see the module comment).
 pub fn issue(kind: Kind, path: &Path) -> Result<String, String> {
-    let mut registry = registry().lock().map_err(|_| "file registry unavailable".to_string())?;
+    let mut registry = registry()
+        .lock()
+        .map_err(|_| "file registry unavailable".to_string())?;
     registry.issue(kind, path, MAX_GRANTS)
 }
 
 /// The path behind a token that was issued for one of `allowed` kinds.
 pub fn resolve(token: &str, allowed: &[Kind]) -> Result<PathBuf, String> {
-    let registry = registry().lock().map_err(|_| "file registry unavailable".to_string())?;
+    let registry = registry()
+        .lock()
+        .map_err(|_| "file registry unavailable".to_string())?;
     registry.resolve(token, allowed)
 }
 
@@ -103,9 +111,16 @@ mod tests {
     fn a_path_or_an_unknown_token_is_refused() {
         let mut reg = Registry::default();
         reg.issue(Kind::Session, &path("s1"), 10).unwrap();
-        assert!(reg.resolve("/granted/s1", &[Kind::Session]).is_err(), "a path is not a token");
+        assert!(
+            reg.resolve("/granted/s1", &[Kind::Session]).is_err(),
+            "a path is not a token"
+        );
         assert!(reg.resolve("", &[Kind::Session]).is_err(), "an empty token");
-        assert!(reg.resolve("00000000000000000000000000000000", &[Kind::Session]).is_err(), "an invented token");
+        assert!(
+            reg.resolve("00000000000000000000000000000000", &[Kind::Session])
+                .is_err(),
+            "an invented token"
+        );
     }
 
     #[test]
@@ -115,7 +130,11 @@ mod tests {
         let saved = reg.issue(Kind::SavedFile, &path("f1"), 10).unwrap();
         assert!(reg.resolve(&session, &[Kind::SavedFile]).is_err());
         assert!(reg.resolve(&saved, &[Kind::Session]).is_err());
-        assert_eq!(reg.resolve(&saved, &[Kind::Session, Kind::SavedFile]).unwrap(), path("f1"));
+        assert_eq!(
+            reg.resolve(&saved, &[Kind::Session, Kind::SavedFile])
+                .unwrap(),
+            path("f1")
+        );
     }
 
     #[test]

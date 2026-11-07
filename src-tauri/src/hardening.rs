@@ -13,16 +13,25 @@
 /// Applies the limits. Returns the calls that failed, for the log; an empty list means both held.
 pub fn harden_process() -> Vec<String> {
     let mut problems = Vec::new();
-    let no_core = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    let no_core = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
     // SAFETY: `setrlimit` only reads the struct it is given, which lives for the call.
     if unsafe { libc::setrlimit(libc::RLIMIT_CORE, &no_core) } != 0 {
-        problems.push(format!("RLIMIT_CORE was not set: {}", std::io::Error::last_os_error()));
+        problems.push(format!(
+            "RLIMIT_CORE was not set: {}",
+            std::io::Error::last_os_error()
+        ));
     }
     #[cfg(target_os = "linux")]
     {
         // SAFETY: `prctl(PR_SET_DUMPABLE, 0)` takes an integer and no pointers.
         if unsafe { libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0) } != 0 {
-            problems.push(format!("PR_SET_DUMPABLE was not cleared: {}", std::io::Error::last_os_error()));
+            problems.push(format!(
+                "PR_SET_DUMPABLE was not cleared: {}",
+                std::io::Error::last_os_error()
+            ));
         }
     }
     problems
@@ -35,7 +44,10 @@ mod tests {
     #[test]
     fn core_dumps_are_off_and_cannot_be_raised_again() {
         assert!(harden_process().is_empty(), "every call must succeed");
-        let mut limit = libc::rlimit { rlim_cur: 1, rlim_max: 1 };
+        let mut limit = libc::rlimit {
+            rlim_cur: 1,
+            rlim_max: 1,
+        };
         // SAFETY: `getrlimit` writes into the struct it is given.
         assert_eq!(unsafe { libc::getrlimit(libc::RLIMIT_CORE, &mut limit) }, 0);
         assert_eq!((limit.rlim_cur, limit.rlim_max), (0, 0));
