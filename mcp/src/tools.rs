@@ -604,6 +604,17 @@ fn export_destination(
             format!("{} is a symbolic link; refused", ancestor.display()),
         ));
     }
+    // A root-owned link in a 0700 directory counts as a trusted ancestor, which
+    // is right for /tmp and wrong for the destination itself. Never follow it.
+    if std::fs::symlink_metadata(&dest)
+        .map(|meta| meta.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        return Err(ToolError::new(
+            "outside_allowed_dir",
+            format!("{} is a symbolic link; refused", dest.display()),
+        ));
+    }
     let parent = dest
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
