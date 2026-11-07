@@ -1406,6 +1406,55 @@ fn remove_any(path: &std::path::Path) {
     }
 }
 
+/// Toggles `name` between a real directory and a symlink to `target`, returning
+/// the number of links planted. A test loops until a minimum, so it cannot pass
+/// without a real swap (the fixed 30/40 iterations could end with none).
+fn race_swapper(
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    name: std::path::PathBuf,
+    target: std::path::PathBuf,
+) -> std::thread::JoinHandle<u64> {
+    use std::sync::atomic::Ordering;
+
+    std::thread::spawn(move || {
+        let hold = name.with_extension("hold");
+        let mut planted = 0u64;
+        let mut real_at_name = true;
+        while !stop.load(Ordering::Relaxed) {
+            if real_at_name {
+                remove_any(&hold);
+                if std::fs::rename(&name, &hold).is_ok() {
+                    if std::os::unix::fs::symlink(&target, &name).is_ok() {
+                        real_at_name = false;
+                        planted += 1;
+                    } else {
+                        remove_any(&name);
+                        let _ = std::fs::rename(&hold, &name);
+                    }
+                }
+            } else {
+                remove_any(&name);
+                for _ in 0..8 {
+                    if std::fs::rename(&hold, &name).is_ok() {
+                        real_at_name = true;
+                        break;
+                    }
+                    remove_any(&name);
+                }
+            }
+            std::hint::spin_loop();
+        }
+        if !real_at_name {
+            remove_any(&name);
+            let _ = std::fs::rename(&hold, &name);
+        }
+        planted
+    })
+}
+
+const MIN_RACE_SWAPS: u64 = 20;
+const RACE_CAP: std::time::Duration = std::time::Duration::from_secs(20);
+
 /// HIGH 2 (review 013) through the MCP export front door: the destination
 /// directory is swapped for a symlink while `export_session` writes. The full
 /// export (`include_sensitive`) writes the bundle through
@@ -1414,6 +1463,8 @@ fn remove_any(path: &std::path::Path) {
 fn export_session_race_never_writes_through_a_swapped_destination() {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::time::Instant;
+
     let mut env = Env::new(false);
     let id = env.import_flow("flow", "");
     env.ctx.cfg.allow_sensitive_export = true;
@@ -1421,42 +1472,14 @@ fn export_session_race_never_writes_through_a_swapped_destination() {
     let outside = env.dir.path().join("outside");
     std::fs::create_dir_all(&outside).unwrap();
 
-    let mut ok = 0usize;
-    for index in 0..40usize {
+    let started = Instant::now();
+    let (mut swaps, mut ok, mut index) = (0u64, 0usize, 0usize);
+    while (swaps < MIN_RACE_SWAPS || ok == 0) && started.elapsed() < RACE_CAP {
+        index += 1;
         let name = format!("race-{index}");
         let dest = out_dir.join(&name);
         let stop = Arc::new(AtomicBool::new(false));
-        let handle = {
-            let stop = stop.clone();
-            let name = dest.clone();
-            let target = outside.clone();
-            std::thread::spawn(move || {
-                let hold = name.with_extension("hold");
-                let mut real_at_name = true;
-                while !stop.load(Ordering::Relaxed) {
-                    if real_at_name {
-                        if std::fs::rename(&name, &hold).is_ok() {
-                            if std::os::unix::fs::symlink(&target, &name).is_ok() {
-                                real_at_name = false;
-                            } else {
-                                remove_any(&name);
-                                let _ = std::fs::rename(&hold, &name);
-                            }
-                        }
-                    } else {
-                        remove_any(&name);
-                        if std::fs::rename(&hold, &name).is_ok() {
-                            real_at_name = true;
-                        }
-                    }
-                    std::hint::spin_loop();
-                }
-                if !real_at_name {
-                    remove_any(&name);
-                    let _ = std::fs::rename(&hold, &name);
-                }
-            })
-        };
+        let handle = race_swapper(stop.clone(), dest.clone(), outside.clone());
         let result = export_session(
             &env.ctx,
             p(json!({
@@ -1469,7 +1492,7 @@ fn export_session_race_never_writes_through_a_swapped_destination() {
             ok += 1;
         }
         stop.store(true, Ordering::Relaxed);
-        handle.join().unwrap();
+        swaps += handle.join().unwrap();
         let entries: Vec<String> = std::fs::read_dir(&outside)
             .unwrap()
             .filter_map(|entry| entry.ok())
@@ -1482,6 +1505,11 @@ fn export_session_race_never_writes_through_a_swapped_destination() {
         remove_any(&dest);
         remove_any(&dest.with_extension("hold"));
     }
+    assert!(
+        swaps >= MIN_RACE_SWAPS,
+        "the race ended without {MIN_RACE_SWAPS} real swaps ({swaps} in {:?})",
+        started.elapsed()
+    );
     assert!(ok > 0, "no export completed during the race");
     assert!(
         std::fs::read_dir(&outside).unwrap().next().is_none(),
@@ -1497,6 +1525,7 @@ fn export_session_race_never_writes_through_a_swapped_destination() {
 fn sanitized_export_race_never_cleans_up_outside() {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::time::Instant;
 
     let env = Env::new(false);
     let id = env.import_flow("flow", "");
@@ -1507,42 +1536,14 @@ fn sanitized_export_race_never_cleans_up_outside() {
         std::fs::write(outside.join(name), "KEEP\n").unwrap();
     }
 
-    let mut ok = 0usize;
-    for index in 0..30usize {
+    let started = Instant::now();
+    let (mut swaps, mut ok, mut index) = (0u64, 0usize, 0usize);
+    while (swaps < MIN_RACE_SWAPS || ok == 0) && started.elapsed() < RACE_CAP {
+        index += 1;
         let name = format!("clean-{index}");
         let dest = out_dir.join(&name);
         let stop = Arc::new(AtomicBool::new(false));
-        let handle = {
-            let stop = stop.clone();
-            let name = dest.clone();
-            let target = outside.clone();
-            std::thread::spawn(move || {
-                let hold = name.with_extension("hold");
-                let mut real_at_name = true;
-                while !stop.load(Ordering::Relaxed) {
-                    if real_at_name {
-                        if std::fs::rename(&name, &hold).is_ok() {
-                            if std::os::unix::fs::symlink(&target, &name).is_ok() {
-                                real_at_name = false;
-                            } else {
-                                remove_any(&name);
-                                let _ = std::fs::rename(&hold, &name);
-                            }
-                        }
-                    } else {
-                        remove_any(&name);
-                        if std::fs::rename(&hold, &name).is_ok() {
-                            real_at_name = true;
-                        }
-                    }
-                    std::hint::spin_loop();
-                }
-                if !real_at_name {
-                    remove_any(&name);
-                    let _ = std::fs::rename(&hold, &name);
-                }
-            })
-        };
+        let handle = race_swapper(stop.clone(), dest.clone(), outside.clone());
         let result = export_session(
             &env.ctx,
             p(json!({
@@ -1555,7 +1556,7 @@ fn sanitized_export_race_never_cleans_up_outside() {
             ok += 1;
         }
         stop.store(true, Ordering::Relaxed);
-        handle.join().unwrap();
+        swaps += handle.join().unwrap();
         let mut names: Vec<String> = std::fs::read_dir(&outside)
             .unwrap()
             .filter_map(|entry| entry.ok())
@@ -1577,5 +1578,10 @@ fn sanitized_export_race_never_cleans_up_outside() {
         remove_any(&dest);
         remove_any(&dest.with_extension("hold"));
     }
+    assert!(
+        swaps >= MIN_RACE_SWAPS,
+        "the race ended without {MIN_RACE_SWAPS} real swaps ({swaps} in {:?})",
+        started.elapsed()
+    );
     assert!(ok > 0, "no sanitized export completed during the race");
 }

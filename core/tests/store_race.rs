@@ -9,27 +9,42 @@
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use scrapelens_core::store::{ensure_private_dir, write_session_dir, PrivateDir};
 
+/// Minimum real swaps before a test may pass. Under load the fixed 1200 ms/3000 ms
+/// loop sometimes ended with zero swaps and proved nothing; the loop now runs
+/// until this many swaps (and one success) or the time cap, whichever comes first.
+const MIN_SWAPS: u64 = 20;
+const RACE_CAP: Duration = Duration::from_secs(10);
+
 /// Toggles `name` between a real directory (ours) and a symlink to `target`.
 /// If a call recreates `name` while it is parked, that intruder is discarded and
-/// the toggle continues; the directory ends real at `name`.
-fn swapper(stop: Arc<AtomicBool>, name: PathBuf, target: PathBuf) -> thread::JoinHandle<u64> {
+/// the toggle continues; the directory ends real at `name`. Every planted link
+/// increments `swaps`, so a test cannot pass without a real swap.
+fn swapper(
+    stop: Arc<AtomicBool>,
+    name: PathBuf,
+    target: PathBuf,
+    swaps: Arc<AtomicU64>,
+) -> thread::JoinHandle<u64> {
     thread::spawn(move || {
         let hold = name.with_extension("hold");
-        let mut swaps = 0u64;
+        let mut planted = 0u64;
         let mut real_at_name = true;
         while !stop.load(Ordering::Relaxed) {
             if real_at_name {
+                // A stale hold can be left by a lost restore; drop it first.
+                let _ = fs::remove_dir_all(&hold);
                 if fs::rename(&name, &hold).is_ok() {
                     if symlink(&target, &name).is_ok() {
                         real_at_name = false;
-                        swaps += 1;
+                        planted += 1;
+                        swaps.fetch_add(1, Ordering::Relaxed);
                     } else {
                         let _ = fs::remove_dir_all(&name);
                         let _ = fs::rename(&hold, &name);
@@ -38,8 +53,15 @@ fn swapper(stop: Arc<AtomicBool>, name: PathBuf, target: PathBuf) -> thread::Joi
             } else {
                 let _ = fs::remove_file(&name);
                 let _ = fs::remove_dir_all(&name);
-                if fs::rename(&hold, &name).is_ok() {
-                    real_at_name = true;
+                // `ensure_private_dir` may recreate the name between the removal
+                // and the rename; retry a few times instead of getting stuck.
+                for _ in 0..8 {
+                    if fs::rename(&hold, &name).is_ok() {
+                        real_at_name = true;
+                        break;
+                    }
+                    let _ = fs::remove_file(&name);
+                    let _ = fs::remove_dir_all(&name);
                 }
             }
             std::hint::spin_loop();
@@ -49,7 +71,7 @@ fn swapper(stop: Arc<AtomicBool>, name: PathBuf, target: PathBuf) -> thread::Joi
             let _ = fs::remove_dir_all(&name);
             let _ = fs::rename(&hold, &name);
         }
-        swaps
+        planted
     })
 }
 
@@ -89,11 +111,12 @@ fn r2_mkdir_through_a_swapped_ancestor_never_lands_outside() {
     fs::create_dir_all(&outside).unwrap();
 
     let stop = Arc::new(AtomicBool::new(false));
-    let handle = swapper(stop.clone(), base.clone(), outside.clone());
+    let swaps = Arc::new(AtomicU64::new(0));
+    let handle = swapper(stop.clone(), base.clone(), outside.clone(), swaps.clone());
     let started = Instant::now();
     let (mut ok, mut errors) = (0u64, 0u64);
     let mut index = 0u64;
-    while started.elapsed() < Duration::from_millis(1200) {
+    while (swaps.load(Ordering::Relaxed) < MIN_SWAPS || ok == 0) && started.elapsed() < RACE_CAP {
         index += 1;
         let destination = base.join(format!("c{index}/d/e/f/session"));
         match ensure_private_dir(&destination) {
@@ -107,13 +130,19 @@ fn r2_mkdir_through_a_swapped_ancestor_never_lands_outside() {
         );
     }
     stop.store(true, Ordering::Relaxed);
-    let swaps = handle.join().unwrap();
+    let total = handle.join().unwrap();
     assert_eq!(outside_entries(&outside), Vec::<String>::new());
+    assert!(
+        swaps.load(Ordering::Relaxed) >= MIN_SWAPS,
+        "the race ended without {} real swaps ({} total, {errors} errors, {:?})",
+        MIN_SWAPS,
+        total,
+        started.elapsed()
+    );
     assert!(
         ok > 0,
         "the race never produced a successful creation (errors={errors})"
     );
-    assert!(swaps > 0, "the swapper never swapped the ancestor");
     let _ = fs::remove_dir_all(root.path());
 }
 
@@ -132,10 +161,16 @@ fn r5_session_write_through_a_swapped_destination_never_leaks() {
     let bundle = bundle();
 
     let stop = Arc::new(AtomicBool::new(false));
-    let handle = swapper(stop.clone(), destination.clone(), outside.clone());
+    let swaps = Arc::new(AtomicU64::new(0));
+    let handle = swapper(
+        stop.clone(),
+        destination.clone(),
+        outside.clone(),
+        swaps.clone(),
+    );
     let started = Instant::now();
     let (mut ok, mut errors) = (0u64, 0u64);
-    while started.elapsed() < Duration::from_millis(3000) {
+    while (swaps.load(Ordering::Relaxed) < MIN_SWAPS || ok == 0) && started.elapsed() < RACE_CAP {
         match write_session_dir(&bundle, &destination) {
             Ok(()) => ok += 1,
             Err(_) => errors += 1,
@@ -147,17 +182,23 @@ fn r5_session_write_through_a_swapped_destination_never_leaks() {
         );
     }
     stop.store(true, Ordering::Relaxed);
-    let swaps = handle.join().unwrap();
+    let total = handle.join().unwrap();
     assert_eq!(
         outside_entries(&outside),
         Vec::<String>::new(),
         "the symlink target received session files"
     );
     assert!(
+        swaps.load(Ordering::Relaxed) >= MIN_SWAPS,
+        "the race ended without {} real swaps ({} total, {errors} errors, {:?})",
+        MIN_SWAPS,
+        total,
+        started.elapsed()
+    );
+    assert!(
         ok > 0,
         "the race never produced a successful write (errors={errors})"
     );
-    assert!(swaps > 0, "the swapper never swapped the destination");
     let _ = fs::remove_dir_all(root.path());
 }
 
