@@ -6,6 +6,12 @@
 //! A process of the same user that can already drive that Chrome is outside this check.
 //! If the owner cannot be confirmed, the connection is refused. A socket that no
 //! process still holds cannot read a tunnel; that result is [`ALREADY_CLOSED`].
+//!
+//! A socket is identified by its whole connection: the client's address and port as the
+//! relay sees them, and the relay's own address and port. Matching the port alone let a
+//! process on another local address reuse the browser's port and be taken for it.
+
+use std::net::{IpAddr, SocketAddr};
 
 /// No process still has this socket. The relay closes it without admitting it and
 /// without showing a failure. A client that is still reading keeps the socket and
@@ -13,21 +19,26 @@
 pub(crate) const ALREADY_CLOSED: &str = "the client closed before its process could be checked";
 
 /// `owner` is the browser pid published by the capture. Zero means it is not known yet.
-pub(crate) fn admit(peer_port: u16, listen_port: u16, owner: u32) -> Result<(), &'static str> {
+/// `client` is the address the relay sees for the connection, `listen` the relay's own.
+pub(crate) fn admit(
+    client: SocketAddr,
+    listen: SocketAddr,
+    owner: u32,
+) -> Result<(), &'static str> {
     if owner == 0 {
         return Err("the capture browser is not running yet");
     }
     #[cfg(target_os = "linux")]
     {
-        linux::admit(peer_port, listen_port, owner)
+        linux::admit(client, listen, owner)
     }
     #[cfg(target_os = "macos")]
     {
-        macos::admit(peer_port, listen_port, owner)
+        macos::admit(client, listen, owner)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
-        let _ = (peer_port, listen_port, owner);
+        let _ = (client, listen, owner);
         Err("the client process could not be confirmed")
     }
 }
@@ -40,8 +51,8 @@ pub(crate) fn admit(peer_port: u16, listen_port: u16, owner: u32) -> Result<(), 
 pub(crate) const CONFIRM_BUDGET: std::time::Duration = std::time::Duration::from_millis(400);
 
 /// Retries `once` with backoff until [`CONFIRM_BUDGET`] is spent.
-/// The sleep stays on this thread. The accept loop admits each connection
-/// on its own thread, so one slow check does not hold the next.
+/// The sleep stays on this thread, and holds no check permit. The accept loop admits each
+/// connection on its own thread, so one slow check does not hold the next.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn retry_for(mut once: impl FnMut() -> Result<(), &'static str>) -> Result<(), &'static str> {
     let started = std::time::Instant::now();
@@ -66,16 +77,27 @@ fn retry_for(mut once: impl FnMut() -> Result<(), &'static str>) -> Result<(), &
     }
 }
 
+/// The address as the pair the relay compares: an IPv4-mapped IPv6 address is its IPv4 form,
+/// so `::ffff:127.0.0.1` and `127.0.0.1` are the same client.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn canonical(ip: IpAddr) -> IpAddr {
+    ip.to_canonical()
+}
+
 #[cfg(target_os = "linux")]
 mod linux {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+
+    use super::canonical;
+
     const NOT_BROWSER: &str = "the client process is not the capture browser";
     const UNCONFIRMED: &str = "the client process could not be confirmed";
 
-    pub(crate) fn admit(peer_port: u16, listen_port: u16, owner: u32) -> Result<(), &'static str> {
+    pub(crate) fn admit(client: SocketAddr, listen: SocketAddr, owner: u32) -> Result<(), &'static str> {
         // The socket can show up in /proc a moment after accept, and a busy
         // /proc read can fail or list one row twice. Spread the misses across
         // the budget, then fail closed. A hit does not sleep.
-        let last = match super::retry_for(|| admit_once(peer_port, listen_port, owner)) {
+        let last = match super::retry_for(|| admit_once(client, listen, owner)) {
             Ok(()) => return Ok(()),
             Err(reason) => reason,
         };
@@ -84,18 +106,19 @@ mod linux {
         // unreadable process of another uid is not that holder. A same-uid
         // process that still has it stays refused, and is not admitted here.
         if last == NOT_BROWSER || last == UNCONFIRMED {
-            let held = if last == NOT_BROWSER { NOT_BROWSER } else { UNCONFIRMED };
-            return released_or(peer_port, listen_port, held);
+            return released_or(client, listen, last);
         }
         Err(last)
     }
 
     /// `held` is the refusal when a process of the socket uid still has the inode.
-    fn released_or(peer_port: u16, listen_port: u16, held: &'static str) -> Result<(), &'static str> {
-        match client_once(peer_port, listen_port) {
+    fn released_or(client: SocketAddr, listen: SocketAddr, held: &'static str) -> Result<(), &'static str> {
+        match client_once(client, listen) {
             Ok(None) => Err(super::ALREADY_CLOSED),
             Err(()) => Err(UNCONFIRMED),
-            Ok(Some(client)) => match uid_holds_inode(client.inode, client.uid) {
+            // No owner (inode 0): the kernel has no process for this socket, so it is closed.
+            Ok(Some(row)) if row.inode == 0 => Err(super::ALREADY_CLOSED),
+            Ok(Some(row)) => match uid_holds_inode(row.inode, row.uid) {
                 Ok(false) => Err(super::ALREADY_CLOSED),
                 Ok(true) => Err(held),
                 Err(()) => Err(UNCONFIRMED),
@@ -103,8 +126,8 @@ mod linux {
         }
     }
 
-    fn admit_once(peer_port: u16, listen_port: u16, owner: u32) -> Result<(), &'static str> {
-        let inode = find_client_inode(peer_port, listen_port)?;
+    fn admit_once(client: SocketAddr, listen: SocketAddr, owner: u32) -> Result<(), &'static str> {
+        let inode = find_client_inode(client, listen)?;
         let mut incomplete = false;
         let mut stack = vec![owner];
         let mut seen = Vec::new();
@@ -129,9 +152,11 @@ mod linux {
         if incomplete { Err(UNCONFIRMED) } else { Err(NOT_BROWSER) }
     }
 
-    fn find_client_inode(peer_port: u16, listen_port: u16) -> Result<u64, &'static str> {
-        match client_once(peer_port, listen_port) {
-            Ok(Some(client)) => Ok(client.inode),
+    fn find_client_inode(client: SocketAddr, listen: SocketAddr) -> Result<u64, &'static str> {
+        match client_once(client, listen) {
+            Ok(Some(row)) if row.inode != 0 => Ok(row.inode),
+            // No owner (inode 0) is a closed socket, not a stranger (LOW 5).
+            Ok(Some(_)) => Err(super::ALREADY_CLOSED),
             // TIME_WAIT and a socket that has already disappeared have no process.
             // A client that is still reading stays ESTABLISHED or FIN_WAIT and is listed.
             Ok(None) => Err(super::ALREADY_CLOSED),
@@ -139,9 +164,10 @@ mod linux {
         }
     }
 
-    /// The client socket is the established row whose local port is the ephemeral port
-    /// and whose remote port is the relay. `/proc/net/tcp` addresses are little-endian.
-    fn client_once(peer_port: u16, listen_port: u16) -> Result<Option<ClientSocket>, ()> {
+    /// The client socket is the established row whose local side is the client's address
+    /// and port, and whose remote side is the relay's. `/proc/net/tcp` addresses are
+    /// little-endian; a row must match the whole connection, not only the port pair.
+    fn client_once(client: SocketAddr, listen: SocketAddr) -> Result<Option<ClientSocket>, ()> {
         let mut found: Option<ClientSocket> = None;
         for path in ["/proc/net/tcp", "/proc/net/tcp6"] {
             let text = match std::fs::read_to_string(path) {
@@ -164,10 +190,12 @@ mod linux {
                 let Some((remote_addr, remote_port)) = remote.rsplit_once(':') else { continue };
                 let Ok(local_port) = u16::from_str_radix(local_port, 16) else { continue };
                 let Ok(remote_port) = u16::from_str_radix(remote_port, 16) else { continue };
-                if local_port != peer_port || remote_port != listen_port {
+                if local_port != client.port() || remote_port != listen.port() {
                     continue;
                 }
-                if !is_loopback(local_addr) || !is_loopback(remote_addr) {
+                if parse_addr(local_addr) != Some(canonical(client.ip()))
+                    || parse_addr(remote_addr) != Some(canonical(listen.ip()))
+                {
                     continue;
                 }
                 // tx_queue:rx_queue, tr:tm, retrnsmt, uid, timeout, inode.
@@ -196,10 +224,24 @@ mod linux {
         uid: u32,
     }
 
-    fn is_loopback(addr: &str) -> bool {
-        addr.eq_ignore_ascii_case("0100007F")
-            || addr.eq_ignore_ascii_case("00000000000000000000000001000000")
-            || addr.eq_ignore_ascii_case("0000000000000000FFFF00000100007F")
+    /// One `/proc/net/tcp` address: 8 hex digits (IPv4) or 32 (IPv6). Each 32-bit word
+    /// is printed in host order, which is little-endian here.
+    fn parse_addr(hex: &str) -> Option<IpAddr> {
+        match hex.len() {
+            8 => {
+                let word = u32::from_str_radix(hex, 16).ok()?;
+                Some(IpAddr::V4(Ipv4Addr::from(word.to_le_bytes())).to_canonical())
+            }
+            32 => {
+                let mut bytes = [0u8; 16];
+                for (index, chunk) in hex.as_bytes().chunks(8).enumerate() {
+                    let word = u32::from_str_radix(std::str::from_utf8(chunk).ok()?, 16).ok()?;
+                    bytes[index * 4..index * 4 + 4].copy_from_slice(&word.to_le_bytes());
+                }
+                Some(IpAddr::V6(Ipv6Addr::from(bytes)).to_canonical())
+            }
+            _ => None,
+        }
     }
 
     fn children(pid: u32) -> Result<Vec<u32>, ()> {
@@ -334,11 +376,11 @@ mod linux {
         #[test]
         fn the_socket_uid_scan_sees_a_live_descriptor_and_not_a_closed_one() {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let port = listener.local_addr().unwrap().port();
-            let client = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let listen = listener.local_addr().unwrap();
+            let client = TcpStream::connect(listen).unwrap();
             let accepted = listener.accept().unwrap();
-            let peer = client.local_addr().unwrap().port();
-            let row = client_once(peer, port).unwrap().expect("client row");
+            let client_addr = client.local_addr().unwrap();
+            let row = client_once(client_addr, listen).unwrap().expect("client row");
             assert_eq!(uid_holds_inode(row.inode, row.uid), Ok(true));
             drop(client);
             drop(accepted);
@@ -349,26 +391,26 @@ mod linux {
         #[test]
         fn a_dropped_socket_is_quiet_and_a_live_one_stays_refused() {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let port = listener.local_addr().unwrap().port();
-            let client = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let listen = listener.local_addr().unwrap();
+            let client = TcpStream::connect(listen).unwrap();
             let (accepted, _) = listener.accept().unwrap();
-            let peer = client.local_addr().unwrap().port();
-            assert_eq!(released_or(peer, port, UNCONFIRMED), Err(UNCONFIRMED));
-            assert_eq!(released_or(peer, port, NOT_BROWSER), Err(NOT_BROWSER));
+            let client_addr = client.local_addr().unwrap();
+            assert_eq!(released_or(client_addr, listen, UNCONFIRMED), Err(UNCONFIRMED));
+            assert_eq!(released_or(client_addr, listen, NOT_BROWSER), Err(NOT_BROWSER));
 
             drop(client);
             drop(accepted);
             thread::sleep(Duration::from_millis(50));
-            assert_eq!(released_or(peer, port, UNCONFIRMED), Err(ALREADY_CLOSED));
-            assert_eq!(released_or(peer, port, NOT_BROWSER), Err(ALREADY_CLOSED));
+            assert_eq!(released_or(client_addr, listen, UNCONFIRMED), Err(ALREADY_CLOSED));
+            assert_eq!(released_or(client_addr, listen, NOT_BROWSER), Err(ALREADY_CLOSED));
 
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let port = listener.local_addr().unwrap().port();
-            let client = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let listen = listener.local_addr().unwrap();
+            let client = TcpStream::connect(listen).unwrap();
             let _accepted = listener.accept().unwrap();
-            let peer = client.local_addr().unwrap().port();
+            let client_addr = client.local_addr().unwrap();
             let mut sleeper = Command::new("/bin/sleep").arg("30").spawn().unwrap();
-            let verdict = admit(peer, port, sleeper.id());
+            let verdict = admit(client_addr, listen, sleeper.id());
             let _ = sleeper.kill();
             let _ = sleeper.wait();
             assert_eq!(verdict, Err(NOT_BROWSER), "{verdict:?}");
@@ -379,7 +421,10 @@ mod linux {
 
 #[cfg(target_os = "macos")]
 mod macos {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use std::os::raw::c_void;
+
+    use super::canonical;
 
     const NOT_BROWSER: &str = "the client process is not the capture browser";
     const UNCONFIRMED: &str = "the client process could not be confirmed";
@@ -397,6 +442,12 @@ mod macos {
     /// TCP stores that struct at offset 0 of `tcp_sockinfo`, so both kinds share it.
     const OFF_FPORT: usize = 264;
     const OFF_LPORT: usize = 268;
+    /// `insi_vflag` (IPv4 / IPv6 flags), then the foreign and local addresses. Each address
+    /// is 16 bytes: an IPv4 address sits in its last four bytes, an IPv6 address in all sixteen.
+    const OFF_VFLAG: usize = 288;
+    const OFF_FADDR: usize = 296;
+    const OFF_LADDR: usize = 312;
+    const INI_IPV4: u8 = 0x1;
     const BSDINFO_SIZE: usize = 136;
     const OFF_PPID: usize = 16;
 
@@ -408,11 +459,11 @@ mod macos {
         fn proc_pidfdinfo(pid: i32, fd: i32, flavor: i32, buffer: *mut c_void, buffersize: i32) -> i32;
     }
 
-    pub(crate) fn admit(peer_port: u16, listen_port: u16, owner: u32) -> Result<(), &'static str> {
+    pub(crate) fn admit(client: SocketAddr, listen: SocketAddr, owner: u32) -> Result<(), &'static str> {
         // A helper can connect in the same instant it appears in the process tree.
         // Spread the misses across the same budget as Linux, then still fail closed.
         // A hit does not sleep.
-        let last = match super::retry_for(|| admit_once(peer_port, listen_port, owner)) {
+        let last = match super::retry_for(|| admit_once(client, listen, owner)) {
             Ok(()) => return Ok(()),
             Err(reason) => reason,
         };
@@ -420,19 +471,19 @@ mod macos {
         // reading has it open somewhere else. A Chrome cancel has already dropped
         // the descriptor, so nobody can read a tunnel reply.
         if last == NOT_BROWSER {
-            match socket_holder(peer_port, listen_port) {
+            return match socket_holder(client, listen) {
                 Ok(Some(pid)) => {
-                    return if descends_from(pid, owner)? { Ok(()) } else { Err(NOT_BROWSER) };
+                    if descends_from(pid, owner)? { Ok(()) } else { Err(NOT_BROWSER) }
                 }
-                Ok(None) => return Err(super::ALREADY_CLOSED),
-                Err(()) => return Err(UNCONFIRMED),
-            }
+                Ok(None) => Err(super::ALREADY_CLOSED),
+                Err(()) => Err(UNCONFIRMED),
+            };
         }
         // The owner tree could not be read fully. A finished scan that finds
         // nobody still holding the socket is a cancel, not a user-facing failure.
         // A process that still has it stays unconfirmed: this does not admit it.
         if last == UNCONFIRMED {
-            return match socket_holder(peer_port, listen_port) {
+            return match socket_holder(client, listen) {
                 Ok(None) => Err(super::ALREADY_CLOSED),
                 Ok(Some(_)) | Err(()) => Err(UNCONFIRMED),
             };
@@ -440,7 +491,7 @@ mod macos {
         Err(last)
     }
 
-    fn admit_once(peer_port: u16, listen_port: u16, owner: u32) -> Result<(), &'static str> {
+    fn admit_once(client: SocketAddr, listen: SocketAddr, owner: u32) -> Result<(), &'static str> {
         let mut incomplete = false;
         let mut stack = vec![owner];
         let mut seen = Vec::new();
@@ -452,7 +503,7 @@ mod macos {
             if seen.len() > 4096 {
                 return Err(UNCONFIRMED);
             }
-            match sockets_match(pid, peer_port, listen_port) {
+            match sockets_match(pid, client, listen) {
                 Ok(true) => return if descends_from(pid, owner)? { Ok(()) } else { Err(NOT_BROWSER) },
                 Ok(false) => {}
                 Err(()) => incomplete = true,
@@ -467,11 +518,11 @@ mod macos {
 
     /// `Ok(Some)` is the process that still has the client socket. `Ok(None)` means
     /// the scan finished and no process has it. `Err` means the scan was incomplete.
-    fn socket_holder(peer_port: u16, listen_port: u16) -> Result<Option<u32>, ()> {
+    fn socket_holder(client: SocketAddr, listen: SocketAddr) -> Result<Option<u32>, ()> {
         let pids = all_pids()?;
         let mut incomplete = false;
         for pid in pids {
-            match sockets_match(pid, peer_port, listen_port) {
+            match sockets_match(pid, client, listen) {
                 Ok(true) => return Ok(Some(pid)),
                 Ok(false) => {}
                 Err(()) => incomplete = true,
@@ -519,7 +570,7 @@ mod macos {
         Ok(buf.into_iter().take(count as usize).filter(|pid| *pid > 0).map(|pid| pid as u32).collect())
     }
 
-    fn sockets_match(pid: u32, peer_port: u16, listen_port: u16) -> Result<bool, ()> {
+    fn sockets_match(pid: u32, client: SocketAddr, listen: SocketAddr) -> Result<bool, ()> {
         let mut list = vec![0u8; 4096 * 8];
         // SAFETY: `list` is writable for its length. The kernel writes at most that many bytes.
         let got = unsafe {
@@ -536,14 +587,14 @@ mod macos {
             if kind != PROX_FDTYPE_SOCKET {
                 continue;
             }
-            if socket_is_client(pid, fd, peer_port, listen_port)? {
+            if socket_is_client(pid, fd, client, listen)? {
                 return Ok(true);
             }
         }
         Ok(false)
     }
 
-    fn socket_is_client(pid: u32, fd: i32, peer_port: u16, listen_port: u16) -> Result<bool, ()> {
+    fn socket_is_client(pid: u32, fd: i32, client: SocketAddr, listen: SocketAddr) -> Result<bool, ()> {
         let mut info = vec![0u8; SOCKET_FDINFO_SIZE];
         // SAFETY: `info` is exactly `sizeof(struct socket_fdinfo)` and is writable.
         let got = unsafe {
@@ -570,7 +621,25 @@ mod macos {
         let foreign = i32::from_le_bytes(info[OFF_FPORT..OFF_FPORT + 4].try_into().unwrap());
         let local = u16::from_be(local as u16);
         let foreign = u16::from_be(foreign as u16);
-        Ok(local == peer_port && foreign == listen_port)
+        if local != client.port() || foreign != listen.port() {
+            return Ok(false);
+        }
+        // The whole connection: the client's address on the local side, the relay's on the foreign.
+        let flags = info[OFF_VFLAG];
+        let local_ip = socket_ip(&info, OFF_LADDR, flags);
+        let foreign_ip = socket_ip(&info, OFF_FADDR, flags);
+        Ok(local_ip == canonical(client.ip()) && foreign_ip == canonical(listen.ip()))
+    }
+
+    /// One `in_sockinfo` address. IPv4 sockets keep their address in the last four bytes.
+    fn socket_ip(info: &[u8], offset: usize, flags: u8) -> IpAddr {
+        let mut raw = [0u8; 16];
+        raw.copy_from_slice(&info[offset..offset + 16]);
+        if flags & INI_IPV4 != 0 {
+            IpAddr::V4(Ipv4Addr::new(raw[12], raw[13], raw[14], raw[15]))
+        } else {
+            IpAddr::V6(Ipv6Addr::from(raw)).to_canonical()
+        }
     }
 
     fn descends_from(pid: u32, owner: u32) -> Result<bool, &'static str> {
@@ -611,7 +680,7 @@ mod macos {
 
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
 mod tests {
-    use std::net::{Shutdown, TcpListener, TcpStream};
+    use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
     use std::process::Command;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -620,13 +689,13 @@ mod tests {
 
     use super::{admit, ALREADY_CLOSED, CONFIRM_BUDGET};
 
-    fn loopback_pair() -> (TcpStream, TcpStream, u16, u16) {
+    fn loopback_pair() -> (TcpStream, TcpStream, SocketAddr, SocketAddr) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let listen_port = listener.local_addr().unwrap().port();
-        let client = TcpStream::connect(("127.0.0.1", listen_port)).unwrap();
+        let listen = listener.local_addr().unwrap();
+        let client = TcpStream::connect(listen).unwrap();
         let (accepted, _) = listener.accept().unwrap();
-        let peer_port = client.local_addr().unwrap().port();
-        (client, accepted, peer_port, listen_port)
+        let client_addr = client.local_addr().unwrap();
+        (client, accepted, client_addr, listen)
     }
 
     struct StopSleep(Option<std::process::Child>);
@@ -736,14 +805,8 @@ mod tests {
             "load admits worst={worst:?} refused={refused} open={open:?} fin={fin:?} fin_elapsed={fin_elapsed:?}"
         );
         assert_eq!(refused, 0, "a socket this process holds was refused under load");
-        assert!(
-            refused_while_held(open),
-            "an open stranger was not refused: {open:?}"
-        );
-        assert!(
-            refused_while_held(fin),
-            "a half-closed stranger was not refused: {fin:?}"
-        );
+        assert!(refused_while_held(open), "an open stranger was not refused: {open:?}");
+        assert!(refused_while_held(fin), "a half-closed stranger was not refused: {fin:?}");
         assert!(
             fin_elapsed >= Duration::from_millis(250),
             "a stranger was refused before the budget: {fin_elapsed:?}"
@@ -787,5 +850,151 @@ mod tests {
         drop(accepted);
         drop(stranger_client);
         drop(stranger_accepted);
+    }
+}
+
+/// Regression for HIGH 1 (review-013, scenario S4). A browser-like socket of the owner
+/// holds source port P towards the relay. A stranger on another local address of the
+/// same host binds the same port P and connects to the same relay. Matching only the
+/// port pair takes the owner's socket for the stranger and admits it; the stranger must
+/// be refused. Runs on Linux and macOS; the stranger uses 127.0.0.2, which is loopback too.
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod same_port_tests {
+    use std::io::{BufRead, BufReader};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream, UdpSocket};
+    use std::os::fd::FromRawFd;
+    use std::process::{Child, Command, Stdio};
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::Duration;
+
+    use super::admit;
+
+    /// The child that owns the browser-like socket. Runs only when spawned by the test.
+    #[test]
+    fn same_port_browser_hold_probe() {
+        let Ok(listen) = std::env::var("SCRAPELENS_PEER_HOLD") else {
+            return;
+        };
+        let stream = TcpStream::connect(("127.0.0.1", listen.parse::<u16>().unwrap())).unwrap();
+        println!("PORT {}", stream.local_addr().unwrap().port());
+        thread::sleep(Duration::from_secs(25));
+        drop(stream);
+    }
+
+    struct Child25(Child);
+
+    impl Drop for Child25 {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    /// `socket`, `bind` to `local`, `connect` to `remote`. Std cannot bind before connect.
+    fn connect_from(local: SocketAddrV4, remote: SocketAddrV4) -> std::io::Result<TcpStream> {
+        fn sockaddr(addr: SocketAddrV4) -> libc::sockaddr_in {
+            // SAFETY: an all-zero `sockaddr_in` is a valid value; the fields set below are the ones used.
+            let mut raw: libc::sockaddr_in = unsafe { std::mem::zeroed() };
+            raw.sin_family = libc::AF_INET as libc::sa_family_t;
+            raw.sin_port = addr.port().to_be();
+            raw.sin_addr = libc::in_addr { s_addr: u32::from_ne_bytes(addr.ip().octets()) };
+            #[cfg(target_os = "macos")]
+            {
+                raw.sin_len = std::mem::size_of::<libc::sockaddr_in>() as u8;
+            }
+            raw
+        }
+        // SAFETY: the descriptor is closed on every error path below, and the sockaddr
+        // structs live for the calls that read them.
+        unsafe {
+            let fd = libc::socket(libc::AF_INET, libc::SOCK_STREAM, 0);
+            if fd < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let bound = sockaddr(local);
+            if libc::bind(
+                fd,
+                (&bound as *const libc::sockaddr_in).cast(),
+                std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t,
+            ) != 0
+            {
+                let error = std::io::Error::last_os_error();
+                libc::close(fd);
+                return Err(error);
+            }
+            let target = sockaddr(remote);
+            if libc::connect(
+                fd,
+                (&target as *const libc::sockaddr_in).cast(),
+                std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t,
+            ) != 0
+            {
+                let error = std::io::Error::last_os_error();
+                libc::close(fd);
+                return Err(error);
+            }
+            Ok(TcpStream::from_raw_fd(fd))
+        }
+    }
+
+    /// A local IPv4 address other than 127.0.0.1 that this host sends from: 127.0.0.2 where the
+    /// loopback range is configured (Linux), else the source the default route uses (macOS,
+    /// which does not configure 127.0.0.2). No packet is sent: a UDP `connect` only picks the route.
+    fn other_local_address() -> Option<Ipv4Addr> {
+        if TcpListener::bind((Ipv4Addr::new(127, 0, 0, 2), 0)).is_ok() {
+            return Some(Ipv4Addr::new(127, 0, 0, 2));
+        }
+        let udp = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+        udp.connect((Ipv4Addr::new(203, 0, 113, 1), 9)).ok()?;
+        match udp.local_addr().ok()?.ip() {
+            IpAddr::V4(ip) if !ip.is_loopback() && !ip.is_unspecified() => Some(ip),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn a_stranger_on_another_address_with_the_browser_port_is_refused() {
+        let other = other_local_address().expect("this host has a second local IPv4 address to send from");
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let listen = listener.local_addr().unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "relay::peer::same_port_tests::same_port_browser_hold_probe", "--nocapture", "--test-threads", "1"])
+            .env("SCRAPELENS_PEER_HOLD", listen.port().to_string())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            // The harness writes its own "name ... " before the probe's line, so the marker
+            // is searched for, not matched at the start.
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if let Some(at) = line.find("PORT ") {
+                    let digits = line[at + 5..].split_whitespace().next().unwrap_or("");
+                    if let Ok(port) = digits.parse::<u16>() {
+                        let _ = tx.send(port);
+                        return;
+                    }
+                }
+            }
+        });
+        let browser_port = rx.recv_timeout(Duration::from_secs(20)).expect("the browser-like socket was not reported");
+        let _browser = Child25(child);
+        let (_browser_side, _) = listener.accept().unwrap();
+        let owner = _browser.0.id();
+
+        // The owner's own socket, on the loopback address the relay sees, is admitted.
+        let owner_addr = SocketAddr::from(([127, 0, 0, 1], browser_port));
+        assert_eq!(admit(owner_addr, listen, owner), Ok(()), "the owner's socket must stay admitted");
+
+        // The stranger: same source port, another loopback address, held open towards the relay.
+        let stranger = connect_from(SocketAddrV4::new(other, browser_port), SocketAddrV4::new(Ipv4Addr::LOCALHOST, listen.port()))
+            .expect("the second local address can send to the relay");
+        let (_stranger_side, _) = listener.accept().unwrap();
+        let stranger_addr = SocketAddr::new(IpAddr::V4(other), browser_port);
+        let verdict = admit(stranger_addr, listen, owner);
+        drop(stranger);
+        assert!(verdict.is_err(), "a stranger with the browser's port was admitted: {verdict:?}");
     }
 }

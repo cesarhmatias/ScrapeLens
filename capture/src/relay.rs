@@ -199,7 +199,8 @@ impl Relay {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .map_err(|e| RelayError::Listen(e.kind().to_string()))?;
         listener.set_nonblocking(true).map_err(|e| RelayError::Listen(e.kind().to_string()))?;
-        let port = listener.local_addr().map_err(|e| RelayError::Listen(e.kind().to_string()))?.port();
+        let listen = listener.local_addr().map_err(|e| RelayError::Listen(e.kind().to_string()))?;
+        let port = listen.port();
 
         let client_limit = Arc::new(AtomicUsize::new(MAX_CLIENTS));
         let owner = Arc::new(AtomicU32::new(0));
@@ -216,7 +217,7 @@ impl Relay {
             clients: Arc::new(AtomicUsize::new(0)),
             client_limit: Arc::clone(&client_limit),
             owner: Arc::clone(&owner),
-            listen_port: port,
+            listen,
             peer_checks: Arc::clone(&peer_checks),
             peer_refused: Arc::clone(&peer_refused),
             peer_max_nanos: Arc::clone(&peer_max_nanos),
@@ -311,7 +312,8 @@ struct Shared {
     clients: Arc<AtomicUsize>,
     client_limit: Arc<AtomicUsize>,
     owner: Arc<AtomicU32>,
-    listen_port: u16,
+    /// The relay's own address, as the connections to it name it.
+    listen: SocketAddr,
     peer_checks: Arc<AtomicU64>,
     peer_refused: Arc<AtomicU64>,
     peer_max_nanos: Arc<AtomicU64>,
@@ -398,8 +400,8 @@ impl Shared {
     /// a process that is still there, including after FIN, are a refusal.
     fn admit(&self, client: &TcpStream) -> Admission {
         let owner = self.owner.load(Ordering::SeqCst);
-        let peer_port = match client.peer_addr() {
-            Ok(addr) => addr.port(),
+        let client_addr = match client.peer_addr() {
+            Ok(addr) => addr,
             Err(_) => {
                 return if quiet_cancel(client) {
                     Admission::QuietClose
@@ -410,7 +412,7 @@ impl Shared {
             }
         };
         let started = std::time::Instant::now();
-        let verdict = peer::admit(peer_port, self.listen_port, owner);
+        let verdict = peer::admit(client_addr, self.listen, owner);
         let nanos = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
         self.peer_checks.fetch_add(1, Ordering::Relaxed);
         let mut current = self.peer_max_nanos.load(Ordering::Relaxed);
@@ -2295,7 +2297,11 @@ mod wire_tests {
             }
         }
         let sleeper = StopSleep(Some(sleeper));
-        let verdict = super::peer::admit(server.peer_addr().unwrap().port(), port, sleeper.0.as_ref().unwrap().id());
+        let verdict = super::peer::admit(
+            server.peer_addr().unwrap(),
+            listener.local_addr().unwrap(),
+            sleeper.0.as_ref().unwrap().id(),
+        );
         assert_eq!(verdict, Err(super::peer::ALREADY_CLOSED), "{verdict:?}");
     }
 }
