@@ -125,16 +125,8 @@ pub fn keep(root: &Path, dir: &Path, destination: &Path) -> Result<PathBuf, Stri
 
 /// Removes a folder that `keep` created and then failed to fill: its entries through core's
 /// private descriptor, then the empty folder through the parent's descriptor.
-fn remove_partial(dest: &Path, parent: &std::os::fd::OwnedFd, name: &std::ffi::OsStr) {
-    if let Ok(private) = store::PrivateDir::open(dest) {
-        if let Ok(entries) = fs::read_dir(dest) {
-            for entry in entries.flatten() {
-                if let Some(entry_name) = entry.file_name().to_str() {
-                    let _ = private.remove_all(entry_name);
-                }
-            }
-        }
-    }
+fn remove_partial(_dest: &Path, parent: &std::os::fd::OwnedFd, name: &std::ffi::OsStr) {
+    // One descriptor-relative recursive walk; no path is resolved again.
     let _ = fsfd::remove_entry_at(parent, name);
 }
 

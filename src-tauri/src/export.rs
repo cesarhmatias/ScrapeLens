@@ -512,19 +512,17 @@ pub fn sanitize_to_with_options(src: &Path, destination: &Path, include_sensitiv
     outcome
 }
 
-/// Removes a folder this call created, and what the failed write left in it. The folder is
-/// private (created by `ensure_private_dir`), so its entries go through core's descriptor.
+/// Removes the folder a failed call created, relative to its parent descriptor.
+/// `open_existing` neither creates nor chmods the parent, and `remove_all` is a
+/// recursive `unlinkat` walk: a name swapped for a link is unlinked, never followed.
 fn remove_created_folder(dest: &Path) {
-    if let Ok(private) = store::PrivateDir::open(dest) {
-        if let Ok(entries) = fs::read_dir(dest) {
-            for entry in entries.flatten() {
-                if let Some(name) = entry.file_name().to_str() {
-                    let _ = private.remove_all(name);
-                }
-            }
-        }
+    let (Some(parent), Some(name)) = (dest.parent(), dest.file_name()) else {
+        return;
+    };
+    let Some(name) = name.to_str() else { return };
+    if let Ok(parent_dir) = store::PrivateDir::open_existing(parent) {
+        let _ = parent_dir.remove_all(name);
     }
-    let _ = fs::remove_dir(dest);
 }
 
 #[cfg(test)]
@@ -838,6 +836,38 @@ mod tests {
         let noted = preview_with(&dir, "req-body", "curl", Some(Err("no attempts".to_string()))).unwrap();
         assert_eq!(plain.text, noted.text);
         assert!(noted.warnings.iter().any(|w| w.code == "export.origins_unavailable"));
+    }
+
+    /// L-4: cleanup of a partial export removes it through the parent descriptor,
+    /// does not chmod a 0755 parent, and does not delete a link target.
+    #[test]
+    fn removing_a_partial_export_is_relative_to_the_parent() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let base = temp_dir("cleanup");
+        let parent = base.join("picked");
+        fs::create_dir(&parent).unwrap();
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o755)).unwrap();
+        let dest = parent.join("partial");
+        fs::create_dir(&dest).unwrap();
+        fs::write(dest.join("session.json"), b"{}").unwrap();
+        remove_created_folder(&dest);
+        assert!(!dest.exists());
+        assert_eq!(
+            fs::metadata(&parent).unwrap().permissions().mode() & 0o777,
+            0o755,
+            "cleanup must not chmod the parent"
+        );
+
+        // The name is swapped for a link to OUTSIDE: only the link is removed.
+        let outside = base.join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("keep.txt"), b"KEEP").unwrap();
+        std::os::unix::fs::symlink(&outside, &dest).unwrap();
+        remove_created_folder(&dest);
+        assert!(!dest.exists(), "the link itself is gone");
+        assert_eq!(fs::read(outside.join("keep.txt")).unwrap(), b"KEEP");
+        fs::remove_dir_all(&base).ok();
     }
 
     /// The folder is swapped for a link to `outside` while text files are written into it. A write
