@@ -748,6 +748,7 @@ pub fn preview_sensitive_export(
 /// same exclusive create as `store::write_atomic`: a new 0600 file, never a
 /// follow of a symlink. An existing symlink is refused and left in place. An
 /// existing file owned by someone else is refused and not truncated.
+#[cfg(test)]
 fn write_private_bytes(path: &Path, bytes: &[u8]) -> Result<(), ToolError> {
     let parent = path
         .parent()
@@ -795,6 +796,7 @@ fn private_dir_error(error: scrapelens_core::CoreError) -> ToolError {
 }
 
 /// A file we do not own must not be replaced, even when the directory is writable.
+#[cfg(test)]
 fn refuse_foreign_owner(
     path: &Path,
     parent: &Path,
@@ -828,18 +830,22 @@ fn refuse_foreign_owner(
 /// Copies a raw artifact from the source session, if it exists as a regular file.
 /// Symlinks or special types are ignored (not copied or listed).
 fn copy_raw_artifact(source: &Path, dest: &Path, name: &str) -> Result<bool, ToolError> {
-    let path = source.join(name);
-    let meta = match std::fs::symlink_metadata(&path) {
-        Ok(meta) => meta,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(ToolError::new("io", format!("{}: {error}", path.display()))),
-    };
-    if !meta.file_type().is_file() {
+    // Both sides are opened once, by descriptor: the check and the read are the same
+    // open (a symlink swapped in after a path check cannot be followed), and the write
+    // is relative to the destination descriptor (review-013c L-7).
+    let source_dir = scrapelens_core::store::PrivateDir::open_existing(source)
+        .map_err(|error| ToolError::new("io", error.to_string()))?;
+    let dest_dir = scrapelens_core::store::PrivateDir::open(dest)
+        .map_err(|error| ToolError::new("io", error.to_string()))?;
+    let Some(bytes) = source_dir
+        .read_regular(name)
+        .map_err(|error| ToolError::new("io", error.to_string()))?
+    else {
         return Ok(false);
-    }
-    let bytes = std::fs::read(&path)
-        .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))?;
-    write_private_bytes(&dest.join(name), &bytes)?;
+    };
+    dest_dir
+        .write(name, &bytes, true)
+        .map_err(|error| ToolError::new("io", error.to_string()))?;
     Ok(true)
 }
 

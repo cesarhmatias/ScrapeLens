@@ -119,6 +119,9 @@ fn open_private_dir(path: &Path) -> Result<File> {
         });
     }
     let absolute = path.is_absolute();
+    let has_components = path
+        .components()
+        .any(|part| matches!(part, Component::Normal(_)));
     let mut components = path.components();
     let mut current = if absolute {
         // Consume `RootDir`; the descriptor starts at the filesystem root.
@@ -127,7 +130,13 @@ fn open_private_dir(path: &Path) -> Result<File> {
     } else {
         PathBuf::new()
     };
-    let root_flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+    // The starting folder is an ancestor when components follow it: search rights
+    // only (L-2), as for every other ancestor.
+    let root_flags = if has_components {
+        search_flags() | OFlags::DIRECTORY | OFlags::CLOEXEC
+    } else {
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC
+    };
     let mut dir: File =
         rustix::fs::open(if absolute { "/" } else { "." }, root_flags, Mode::empty())
             .map(File::from)
@@ -150,9 +159,64 @@ fn open_private_dir(path: &Path) -> Result<File> {
             Component::Normal(part) => part,
         };
         current.push(part);
-        dir = enter_private_component(&dir, part, &current, is_final)?;
+        dir = enter_private_component(&dir, part, &current, is_final, true)?;
     }
     verify_private_fd(&dir, path)?;
+    Ok(dir)
+}
+
+/// Opens an EXISTING directory without creating, chmodding or requiring 0700 or
+/// a given owner. The walk still refuses a user symlink and uses search rights on
+/// ancestors. Used by cleanup and by readers that must not change the folder.
+#[cfg(unix)]
+fn open_existing_dir(path: &Path) -> Result<File> {
+    use rustix::fs::{Mode, OFlags};
+
+    if path.as_os_str().is_empty() {
+        return Err(CoreError::LimitExceeded {
+            message: "empty path; refused".to_string(),
+        });
+    }
+    let absolute = path.is_absolute();
+    let mut components = path.components();
+    if absolute {
+        components.next();
+    }
+    let has_components = components.clone().any(|part| matches!(part, Component::Normal(_)));
+    let mut current = if absolute {
+        PathBuf::from("/")
+    } else {
+        PathBuf::new()
+    };
+    let mut flags = OFlags::DIRECTORY | OFlags::CLOEXEC;
+    flags |= if has_components {
+        search_flags()
+    } else {
+        OFlags::RDONLY
+    };
+    let mut dir: File = rustix::fs::open(if absolute { "/" } else { "." }, flags, Mode::empty())
+        .map(File::from)
+        .map_err(|error| CoreError::io(path, errno_io(error)))?;
+    let mut remaining = components.peekable();
+    while let Some(component) = remaining.next() {
+        let is_final = remaining.peek().is_none();
+        let part = match component {
+            Component::RootDir | Component::CurDir => continue,
+            Component::ParentDir => {
+                return Err(CoreError::LimitExceeded {
+                    message: format!("{} contains '..'; refused", path.display()),
+                });
+            }
+            Component::Prefix(_) => {
+                return Err(CoreError::LimitExceeded {
+                    message: format!("{} has an unsupported prefix; refused", path.display()),
+                });
+            }
+            Component::Normal(part) => part,
+        };
+        current.push(part);
+        dir = enter_private_component(&dir, part, &current, is_final, false)?;
+    }
     Ok(dir)
 }
 
@@ -166,6 +230,7 @@ fn enter_private_component(
     part: &std::ffi::OsStr,
     current: &Path,
     is_final: bool,
+    create: bool,
 ) -> Result<File> {
     use rustix::fs::{AtFlags, FileType, Mode};
 
@@ -188,6 +253,12 @@ fn enter_private_component(
             open_component(dir, part, current, false, is_final)
         }
         Err(error) if error == rustix::io::Errno::NOENT => {
+            if !create {
+                return Err(CoreError::io(
+                    current,
+                    errno_io(rustix::io::Errno::NOENT),
+                ));
+            }
             for _ in 0..8 {
                 match rustix::fs::mkdirat(dir, part, Mode::from(0o700)) {
                     Ok(()) => {}
@@ -567,7 +638,7 @@ fn session_json_bytes(session: &crate::model::SessionV1, threshold: usize) -> Re
 /// here: the system-symlink exception belongs to the ancestor walk only.
 #[cfg(unix)]
 fn open_private_subdir(parent: &File, name: &str, path: &Path) -> Result<File> {
-    let dir = enter_private_component(parent, std::ffi::OsStr::new(name), path, true)?;
+    let dir = enter_private_component(parent, std::ffi::OsStr::new(name), path, true, true)?;
     verify_private_fd(&dir, path)?;
     Ok(dir)
 }
@@ -594,6 +665,56 @@ impl PrivateDir {
     pub fn path(&self) -> &Path {
         &self.path
     }
+    /// Opens an existing directory without creating it, chmodding it or checking
+    /// its mode/owner. Cleanup and readers use this so a 0755 destination is not
+    /// changed and a foreign parent is not skipped.
+    pub fn open_existing(path: &Path) -> Result<Self> {
+        Ok(Self {
+            dir: open_existing_dir(path)?,
+            path: path.to_path_buf(),
+        })
+    }
+
+    /// Reads a regular file by name, relative to the descriptor. `None` when the
+    /// name is missing or is not a regular file (a symlink swapped in is refused).
+    pub fn read_regular(&self, name: &str) -> Result<Option<Vec<u8>>> {
+        use std::io::Read;
+
+        use rustix::fs::{AtFlags, FileType, Mode, OFlags};
+
+        validate_attachment_name(name)?;
+        let stat = match rustix::fs::statat(&self.dir, name, AtFlags::SYMLINK_NOFOLLOW) {
+            Ok(stat) => stat,
+            Err(error) if error == rustix::io::Errno::NOENT => return Ok(None),
+            Err(error) => return Err(CoreError::io(self.path.join(name), errno_io(error))),
+        };
+        if !FileType::from_raw_mode(stat.st_mode as _).is_file() {
+            return Ok(None);
+        }
+        let flags = OFlags::RDONLY | OFlags::NONBLOCK | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+        let mut file = match rustix::fs::openat(&self.dir, name, flags, Mode::empty()) {
+            Ok(file) => File::from(file),
+            Err(error)
+                if error == rustix::io::Errno::NOENT
+                    || error == rustix::io::Errno::LOOP
+                    || error == rustix::io::Errno::NOTDIR =>
+            {
+                return Ok(None);
+            }
+            Err(error) => return Err(CoreError::io(self.path.join(name), errno_io(error))),
+        };
+        let meta = file
+            .metadata()
+            .map_err(|error| CoreError::io(self.path.join(name), error))?;
+        if !meta.is_file() {
+            return Ok(None);
+        }
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .map_err(|error| CoreError::io(self.path.join(name), error))?;
+        Ok(Some(bytes))
+    }
+
 
     /// Writes one private file (0600) atomically, replacing a planted symlink name
     /// without touching its target.
@@ -819,6 +940,28 @@ impl PrivateDir {
         validate_attachment_name(name)?;
         write_atomic(&self.path.join(name), bytes, sync_data)
     }
+    pub fn open_existing(path: &Path) -> Result<Self> {
+        if !path.is_dir() {
+            return Err(not_a_directory(path));
+        }
+        Ok(Self {
+            path: path.to_path_buf(),
+        })
+    }
+
+    pub fn read_regular(&self, name: &str) -> Result<Option<Vec<u8>>> {
+        validate_attachment_name(name)?;
+        let path = self.path.join(name);
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(CoreError::io(&path, error)),
+            Ok(meta) if !meta.is_file() || meta.file_type().is_symlink() => Ok(None),
+            Ok(_) => fs::read(&path)
+                .map(Some)
+                .map_err(|error| CoreError::io(&path, error)),
+        }
+    }
+
 
     pub fn write_replacing(&self, name: &str, bytes: &[u8], sync_data: bool) -> Result<()> {
         self.write(name, bytes, sync_data)
