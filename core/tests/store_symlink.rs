@@ -86,6 +86,29 @@ fn ancestor_symlinks_are_refused_before_creating_the_session() {
 }
 
 #[test]
+fn an_ancestor_without_the_read_bit_is_walked_with_search_rights() {
+    // L4 regression: ancestors are only used as `*at` dirfds, so a mode 0311
+    // folder (write+execute, no read) must not fail with EACCES.
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = tempfile::tempdir().unwrap();
+    let locked = root.path().join("locked");
+    fs::create_dir(&locked).unwrap();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o311)).unwrap();
+
+    let destination = locked.join("session");
+    scrapelens_core::store::ensure_private_dir(&destination).unwrap();
+    assert_eq!(
+        fs::metadata(&destination).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    write_session_dir(&bundle(), &destination).unwrap();
+    assert!(destination.join("session.json").is_file());
+
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o700)).unwrap();
+}
+
+#[test]
 fn symlinked_destinations_are_refused_and_targets_stay_intact() {
     let root = tempfile::tempdir().unwrap();
     let dir = root.path().join("session");

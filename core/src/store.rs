@@ -150,7 +150,7 @@ fn open_private_dir(path: &Path) -> Result<File> {
             Component::Normal(part) => part,
         };
         current.push(part);
-        dir = enter_private_component(&dir, part, &current, !is_final)?;
+        dir = enter_private_component(&dir, part, &current, is_final)?;
     }
     verify_private_fd(&dir, path)?;
     Ok(dir)
@@ -165,7 +165,7 @@ fn enter_private_component(
     dir: &File,
     part: &std::ffi::OsStr,
     current: &Path,
-    allow_system_link: bool,
+    is_final: bool,
 ) -> Result<File> {
     use rustix::fs::{AtFlags, FileType, Mode};
 
@@ -175,17 +175,17 @@ fn enter_private_component(
             if kind == FileType::Symlink {
                 let parent = rustix::fs::fstat(dir)
                     .map_err(|error| CoreError::io(current, errno_io(error)))?;
-                if allow_system_link
+                if !is_final
                     && trusted_system_link(stat.st_uid, parent.st_uid, u64::from(parent.st_mode))
                 {
-                    return open_component(dir, part, current, true);
+                    return open_component(dir, part, current, true, false);
                 }
                 return Err(symlink_refused(current));
             }
             if !kind.is_dir() {
                 return Err(not_a_directory(current));
             }
-            open_component(dir, part, current, false)
+            open_component(dir, part, current, false, is_final)
         }
         Err(error) if error == rustix::io::Errno::NOENT => {
             for _ in 0..8 {
@@ -194,7 +194,7 @@ fn enter_private_component(
                     Err(error) if error == rustix::io::Errno::EXIST => {}
                     Err(error) => return Err(CoreError::io(current, errno_io(error))),
                 }
-                match open_component(dir, part, current, false) {
+                match open_component(dir, part, current, false, is_final) {
                     Ok(opened) => return Ok(opened),
                     Err(CoreError::Io { source, .. })
                         if source.raw_os_error()
@@ -234,15 +234,42 @@ fn open_component(
     part: &std::ffi::OsStr,
     current: &Path,
     follow: bool,
+    readable: bool,
 ) -> Result<File> {
     use rustix::fs::{Mode, OFlags};
-    let mut flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+    let mut flags = OFlags::DIRECTORY | OFlags::CLOEXEC;
+    flags |= if readable {
+        OFlags::RDONLY
+    } else {
+        search_flags()
+    };
     if !follow {
         flags |= OFlags::NOFOLLOW;
     }
     rustix::fs::openat(dir, part, flags, Mode::empty())
         .map(File::from)
         .map_err(|error| CoreError::io(current, errno_io(error)))
+}
+
+/// Flags for an ANCESTOR directory: it only needs to be used as a `*at`
+/// dirfd, not read. `O_PATH` (Linux) and `O_SEARCH` (macOS) avoid requiring the
+/// read bit, so a destination under a 0311 ancestor stays reachable.
+#[cfg(unix)]
+fn search_flags() -> rustix::fs::OFlags {
+    #[cfg(target_os = "linux")]
+    {
+        rustix::fs::OFlags::PATH
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // libc's O_SEARCH on macOS is O_EXEC|O_DIRECTORY (`fcntl.h`); rustix
+        // does not name O_SEARCH, and O_DIRECTORY is added by the caller.
+        rustix::fs::OFlags::from_bits_retain(0x4000_0000)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        rustix::fs::OFlags::RDONLY
+    }
 }
 
 #[cfg(unix)]
@@ -540,7 +567,7 @@ fn session_json_bytes(session: &crate::model::SessionV1, threshold: usize) -> Re
 /// here: the system-symlink exception belongs to the ancestor walk only.
 #[cfg(unix)]
 fn open_private_subdir(parent: &File, name: &str, path: &Path) -> Result<File> {
-    let dir = enter_private_component(parent, std::ffi::OsStr::new(name), path, false)?;
+    let dir = enter_private_component(parent, std::ffi::OsStr::new(name), path, true)?;
     verify_private_fd(&dir, path)?;
     Ok(dir)
 }
