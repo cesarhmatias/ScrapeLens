@@ -929,18 +929,22 @@ fn export_session_inner(ctx: &Ctx, params: ExportSessionParams, authorized: bool
     })();
 
     if outcome.is_err() && created {
-        // Remove the partial export relative to the parent descriptor: a swap of
-        // `dest` for a symlink must not delete the link target.
-        if let (Some(parent), Some(name)) = (dest.parent(), dest.file_name()) {
-            if let (Ok(parent_dir), Some(name)) = (
-                scrapelens_core::store::PrivateDir::open(parent),
-                name.to_str(),
-            ) {
-                let _ = parent_dir.remove_all(name);
-            }
-        }
+        remove_partial_export(&dest);
     }
     outcome
+}
+
+/// Removes the folder a failed export created, relative to its parent descriptor.
+/// `open_existing` neither creates nor chmods the parent: a 0755 out-dir keeps its
+/// mode and a foreign-owned parent is still opened for the unlink (L-4/L-5).
+fn remove_partial_export(dest: &Path) {
+    let (Some(parent), Some(name)) = (dest.parent(), dest.file_name()) else {
+        return;
+    };
+    let Some(name) = name.to_str() else { return };
+    if let Ok(parent_dir) = scrapelens_core::store::PrivateDir::open_existing(parent) {
+        let _ = parent_dir.remove_all(name);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1999,6 +2003,35 @@ pub fn scrub_output(value: &mut Value) {
         value,
         &scrapelens_core::export::sanitize::SanitizeOptions::default(),
     );
+}
+
+#[cfg(all(test, unix))]
+mod export_cleanup_tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::remove_partial_export;
+
+    #[test]
+    fn a_failed_export_cleanup_keeps_a_0755_parent_and_removes_the_partial_dir() {
+        let root = tempfile::tempdir().unwrap();
+        let out = root.path().join("out");
+        std::fs::create_dir(&out).unwrap();
+        std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let dest = out.join("partial");
+        std::fs::create_dir(&dest).unwrap();
+        std::fs::write(dest.join("session.json"), b"{}").unwrap();
+        std::fs::create_dir(dest.join("attachments")).unwrap();
+        std::fs::write(dest.join("attachments/a.bin"), b"A").unwrap();
+
+        remove_partial_export(&dest);
+
+        assert!(!dest.exists(), "the partial export is gone");
+        assert_eq!(
+            std::fs::metadata(&out).unwrap().permissions().mode() & 0o777,
+            0o755,
+            "cleanup must not chmod the parent"
+        );
+    }
 }
 
 #[cfg(all(test, unix))]
