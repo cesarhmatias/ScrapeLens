@@ -230,6 +230,38 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 
+    /// L-3 (review-013c): a FIFO inside the run must be refused, not opened read-only
+    /// (which blocks until a writer appears).
+    #[test]
+    fn keep_refuses_a_fifo_in_the_run_without_blocking() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let base = tmp("fifo");
+        let root = tmp_root(&base).unwrap();
+        let run = make_exec(&root, "fifo-run");
+        let fifo = run.join("pipe.bin");
+        let status = std::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .expect("mkfifo");
+        assert!(status.success(), "mkfifo failed");
+        let dest = base.join("kept");
+        let (tx, rx) = mpsc::channel();
+        let (root, run, dest_clone) = (root.clone(), run.clone(), dest.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send(keep(&root, &run, &dest_clone).map_err(|error| error.to_string()));
+        });
+        let result = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("keep blocked on a FIFO");
+        let error = result.expect_err("a FIFO must be refused");
+        assert!(error.contains("not a regular file"), "{error}");
+        assert!(!dest.exists(), "nothing is kept from a refused run");
+        fs::remove_file(&fifo).ok();
+        fs::remove_dir_all(&base).ok();
+    }
+
     /// Swaps `parent` between a real folder and a link to `outside` while copies run. A copy may
     /// fail; no run may land in `outside`.
     #[test]
