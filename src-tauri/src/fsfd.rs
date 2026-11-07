@@ -248,7 +248,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(base.join("real/sub")).unwrap();
         std::os::unix::fs::symlink(base.join("real"), base.join("link")).unwrap();
-        assert!(open_dir_nofollow(&base.join("link/sub")).is_err(), "a user's link is refused as an ancestor");
+        // A link in a folder that others can write is not a system link, whoever created it. Root
+        // creates the link as root, so the folder's mode is what makes it a user's link here.
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(open_dir_nofollow(&base.join("link/sub")).is_err(), "a link in a writable folder is refused as an ancestor");
         std::fs::remove_dir_all(&base).unwrap();
     }
 
