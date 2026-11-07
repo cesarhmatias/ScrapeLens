@@ -158,6 +158,8 @@ The browsers the App accepts on Linux are listed in [`linux/BROWSERS.md`](linux/
   block the macOS app when it is downloaded from a release; the README explains how to open it.
 - The Linux packages are not signed.
 - macOS arm64 only. Intel is neither built nor tested.
-- The save-panel flow of the macOS app is not covered by automated tests.
-- The CDP endpoint starts with `--remote-allow-origins=*` (see [`capture/src/lib.rs`](../capture/src/lib.rs)).
-  The exposure is limited to loopback, an ephemeral port and the capture window.
+- The save-panel flow of the macOS app is checked by hand, not by automated tests (see
+  [`tests/results/exportacao`](../tests/results/exportacao)).
+- The launcher does not pass `--remote-allow-origins`. CDP uses the pipe by default; only
+  `SCRAPELENS_CDP_TRANSPORT=port` opens `127.0.0.1` on an ephemeral port, during the capture
+  (see [`capture/src/launcher.rs`](../capture/src/launcher.rs)).

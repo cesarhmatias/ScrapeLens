@@ -58,10 +58,15 @@ pending      true when core/ has not run this step yet
 
 ## Known limitations
 
-- `--remote-allow-origins=*` in the launcher: the CDP endpoint at
-  `127.0.0.1:<ephemeral port>` accepts any Origin during capture. The risk is
-  limited to loopback, the random port and the session window; even so, do not browse
-  untrusted pages in the inspected Chrome while recording.
+- The launcher does not pass `--remote-allow-origins`. By default CDP uses the pipe
+  (`--remote-debugging-pipe`), with no port. Only with `SCRAPELENS_CDP_TRANSPORT=port`
+  does Chrome open `--remote-debugging-port=0` on `127.0.0.1`. In that mode a client
+  that sends no `Origin` is accepted during the capture; the launcher's comment
+  (`capture/src/launcher.rs`) says Chrome refuses a WebSocket that carries an `Origin`
+  without that flag. The exposure is limited to loopback, the random port and the
+  session window. A reviewer's note said the endpoint accepts any Origin during
+  capture; that describes builds with `--remote-allow-origins=*`, which this code does
+  not use. Even so, do not browse untrusted pages in the inspected Chrome while recording.
 - CDP bodies are written to `cdp-bodies.jsonl` and imported into the live session:
   request payload (`Network.getRequestPostData`) and response body
   (`Network.getResponseBody` at `loadingFinished`), in `attachments/`. Each body is
