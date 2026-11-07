@@ -66,34 +66,36 @@ pub fn decode_h2(
         let mut settings = Vec::new();
         let mut window_updates = Vec::new();
         let mut notes = Vec::new();
-        let mut preface = false;
 
-        if let Some(bytes) = sent.get(&source) {
-            if bytes.len() > MAX_BYTES {
-                warnings.push(Warning::new(
-                    "netlog.h2_bytes_too_large",
-                    format!(
-                        "SSL source {source}: {} bytes of HTTP/2 plaintext left undecoded",
-                        bytes.len()
-                    ),
-                ));
-            } else {
-                let mut decoder = Decoder::with_dynamic_size(65536);
-                preface = bytes.starts_with(PREFACE);
-                if !preface {
-                    notes.push("SSL_SOCKET_BYTES_SENT has no HTTP/2 preface; frames decoded from the first byte".to_string());
-                }
-                decode_direction(
-                    bytes,
-                    Direction::Request,
-                    &mut decoder,
-                    &mut streams,
-                    &mut settings,
-                    &mut window_updates,
-                    source,
-                    &mut warnings,
-                );
-            }
+        let Some(sent_bytes) = sent.get(&source) else {
+            continue;
+        };
+        if !sent_bytes.starts_with(PREFACE) {
+            // `SSL_SOCKET_BYTES_SENT` holds the plaintext in h1 too. Only an h2
+            // connection starts with the preface; an h1 request line is not a frame.
+            continue;
+        }
+        let preface = true;
+        if sent_bytes.len() > MAX_BYTES {
+            warnings.push(Warning::new(
+                "netlog.h2_bytes_too_large",
+                format!(
+                    "SSL source {source}: {} bytes of HTTP/2 plaintext left undecoded",
+                    sent_bytes.len()
+                ),
+            ));
+        } else {
+            let mut decoder = Decoder::with_dynamic_size(65536);
+            decode_direction(
+                sent_bytes,
+                Direction::Request,
+                &mut decoder,
+                &mut streams,
+                &mut settings,
+                &mut window_updates,
+                source,
+                &mut warnings,
+            );
         }
         if let Some(bytes) = received.get(&source) {
             if bytes.len() > MAX_BYTES {
