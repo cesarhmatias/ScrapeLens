@@ -1488,3 +1488,94 @@ fn export_session_race_never_writes_through_a_swapped_destination() {
         "the link target received exported session files"
     );
 }
+
+/// L2 (review 013b) through the MCP sanitized export: the cleanup of the raw
+/// artifact names and of a partial export must be relative to the descriptor.
+/// The outside directory holds sentinels with those names; a swap of the
+/// destination for a symlink must never delete them.
+#[test]
+fn sanitized_export_race_never_cleans_up_outside() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    let env = Env::new(false);
+    let id = env.import_flow("flow", "");
+    let out_dir = env.ctx.cfg.out_dir.clone();
+    let outside = env.dir.path().join("outside-cleanup");
+    std::fs::create_dir_all(&outside).unwrap();
+    for name in ["cdp-events.jsonl", "netlog.json"] {
+        std::fs::write(outside.join(name), "KEEP\n").unwrap();
+    }
+
+    let mut ok = 0usize;
+    for index in 0..30usize {
+        let name = format!("clean-{index}");
+        let dest = out_dir.join(&name);
+        let stop = Arc::new(AtomicBool::new(false));
+        let handle = {
+            let stop = stop.clone();
+            let name = dest.clone();
+            let target = outside.clone();
+            std::thread::spawn(move || {
+                let hold = name.with_extension("hold");
+                let mut real_at_name = true;
+                while !stop.load(Ordering::Relaxed) {
+                    if real_at_name {
+                        if std::fs::rename(&name, &hold).is_ok() {
+                            if std::os::unix::fs::symlink(&target, &name).is_ok() {
+                                real_at_name = false;
+                            } else {
+                                remove_any(&name);
+                                let _ = std::fs::rename(&hold, &name);
+                            }
+                        }
+                    } else {
+                        remove_any(&name);
+                        if std::fs::rename(&hold, &name).is_ok() {
+                            real_at_name = true;
+                        }
+                    }
+                    std::hint::spin_loop();
+                }
+                if !real_at_name {
+                    remove_any(&name);
+                    let _ = std::fs::rename(&hold, &name);
+                }
+            })
+        };
+        let result = export_session(
+            &env.ctx,
+            p(json!({
+                "session_id": id,
+                "destination": name,
+                "include_sensitive": false,
+            })),
+        );
+        if result.is_ok() {
+            ok += 1;
+        }
+        stop.store(true, Ordering::Relaxed);
+        handle.join().unwrap();
+        let mut names: Vec<String> = std::fs::read_dir(&outside)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            vec!["cdp-events.jsonl".to_string(), "netlog.json".to_string()],
+            "iteration {index}: cleanup changed the outside directory"
+        );
+        for sentinel in ["cdp-events.jsonl", "netlog.json"] {
+            assert_eq!(
+                std::fs::read_to_string(outside.join(sentinel)).unwrap(),
+                "KEEP\n",
+                "iteration {index}: {sentinel} was removed or rewritten outside"
+            );
+        }
+        remove_any(&dest);
+        remove_any(&dest.with_extension("hold"));
+    }
+    assert!(ok > 0, "no sanitized export completed during the race");
+}

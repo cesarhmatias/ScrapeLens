@@ -86,6 +86,60 @@ fn ancestor_symlinks_are_refused_before_creating_the_session() {
 }
 
 #[test]
+fn an_ancestor_without_the_read_bit_is_walked_with_search_rights() {
+    // L4 regression: ancestors are only used as `*at` dirfds, so a mode 0311
+    // folder (write+execute, no read) must not fail with EACCES.
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = tempfile::tempdir().unwrap();
+    let locked = root.path().join("locked");
+    fs::create_dir(&locked).unwrap();
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o311)).unwrap();
+
+    let destination = locked.join("session");
+    scrapelens_core::store::ensure_private_dir(&destination).unwrap();
+    assert_eq!(
+        fs::metadata(&destination).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    write_session_dir(&bundle(), &destination).unwrap();
+    assert!(destination.join("session.json").is_file());
+
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o700)).unwrap();
+}
+
+#[test]
+fn copy_from_refuses_a_fifo_without_blocking_on_it() {
+    // L5 regression: opening a FIFO read-only blocks until a writer appears.
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let root = tempfile::tempdir().unwrap();
+    let destination = root.path().join("dest");
+    let private = scrapelens_core::store::PrivateDir::open(&destination).unwrap();
+    let fifo = root.path().join("fifo");
+    let status = std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .expect("mkfifo");
+    assert!(status.success(), "mkfifo failed");
+
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = private
+            .copy_from("body.bin", &fifo)
+            .map_err(|error| error.to_string());
+        let _ = tx.send(result);
+    });
+    let result = rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("copy_from blocked on a FIFO");
+    let error = result.expect_err("a FIFO must be refused");
+    assert!(error.contains("not a regular file"), "{error}");
+    assert!(!destination.join("body.bin").exists());
+}
+
+#[test]
 fn symlinked_destinations_are_refused_and_targets_stay_intact() {
     let root = tempfile::tempdir().unwrap();
     let dir = root.path().join("session");
@@ -242,4 +296,31 @@ fn racing_symlink_and_creation_never_escapes_or_masks_the_link() {
             );
         }
     }
+}
+
+#[test]
+fn copy_tree_from_copies_regular_files_and_refuses_a_symlink() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    fs::create_dir_all(source.join("attachments")).unwrap();
+    fs::write(source.join("session.json"), b"{}").unwrap();
+    fs::write(source.join("attachments/a.bin"), b"A").unwrap();
+
+    let destination = root.path().join("destination");
+    let private = scrapelens_core::store::PrivateDir::open(&destination).unwrap();
+    private.copy_tree_from(&source).unwrap();
+    assert_eq!(fs::read(destination.join("session.json")).unwrap(), b"{}");
+    assert_eq!(
+        fs::read(destination.join("attachments/a.bin")).unwrap(),
+        b"A"
+    );
+
+    let other = root.path().join("other");
+    fs::create_dir(&other).unwrap();
+    std::os::unix::fs::symlink(destination.join("session.json"), other.join("link.json")).unwrap();
+    let refused = root.path().join("refused");
+    let private = scrapelens_core::store::PrivateDir::open(&refused).unwrap();
+    let error = private.copy_tree_from(&other).unwrap_err();
+    assert!(error.to_string().contains("symbolic link"), "{error}");
+    assert!(!refused.join("link.json").exists());
 }
