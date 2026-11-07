@@ -26,7 +26,11 @@ pub const SENSITIVE_NOTICE: &str = "This capture records cookies, authorization 
 /// Chrome debugging address (loopback).
 #[derive(Debug, Clone)]
 pub(crate) struct Endpoint {
+    /// Written for the port transport. The pipe and `expose_cdp` do not publish it.
+    #[allow(dead_code)]
     pub http: Option<String>,
+    /// Written for the port transport. `expose_cdp` publishes `CdpAccess.socket` instead.
+    #[allow(dead_code)]
     pub browser_ws: String,
     pub chrome_pid: u32,
     pub page_target_id: Option<String>,
@@ -41,6 +45,11 @@ pub(crate) enum Control {
         wait_load: bool,
         timeout: Duration,
         reply: Sender<Result<NavigateResult, NavigateError>>,
+    },
+    /// An external client command that already passed the socket allowlist.
+    ForwardCdp {
+        message: Value,
+        reply: Sender<String>,
     },
 }
 
@@ -113,6 +122,8 @@ impl std::error::Error for StartError {}
 pub struct CdpAccess {
     pub http: Option<String>,
     pub browser_ws: String,
+    /// Mode-0600 unix socket (`cdp.sock`). NUL-terminated JSON. No TCP port.
+    pub socket: Option<String>,
     /// The capture tab (the one `navigate` uses): the agent attaches to this one.
     pub page_target_id: Option<String>,
 }
@@ -207,6 +218,9 @@ pub struct BrowserCapture {
     stop: Sender<()>,
     join: Option<JoinHandle<Result<(CaptureOutcome, RunReport), String>>>,
     status: Arc<Mutex<CaptureStatus>>,
+    /// Present only with `expose_cdp`. Held so the socket lives until drop.
+    #[allow(dead_code)]
+    gate: Option<super::cdp_expose::Gate>,
 }
 
 /// Start of the `Cdp::send` message when a response deadline expires.
@@ -279,13 +293,9 @@ impl BrowserCapture {
             control: Some(control_rx),
             endpoint: Some(endpoint.clone()),
             require_initial_target_ready: true,
-            // With no agent connected, Chrome opens no port at all (pipe); with
-            // `expose_cdp`, the port, only on 127.0.0.1, is inherent to the feature.
-            transport: if config.expose_cdp {
-                CdpTransport::Port
-            } else {
-                CdpTransport::Pipe
-            },
+            // Pipe in every mode, including `expose_cdp`. The agent gets a
+            // mode-0600 unix socket; Chrome opens no TCP port.
+            transport: CdpTransport::Pipe,
         };
         let thread_status = status.clone();
         let join = thread::spawn(move || {
@@ -310,7 +320,7 @@ impl BrowserCapture {
             .ok()
             .and_then(|guard| guard.clone())
             .ok_or_else(|| StartError::BrowserStart("debugging endpoint missing".to_string()))?;
-        let info = StartInfo {
+        let mut info = StartInfo {
             session_dir: config.session_dir.display().to_string(),
             chrome_pid: endpoint.chrome_pid,
             browser: BrowserInfo {
@@ -324,13 +334,44 @@ impl BrowserCapture {
                 resolver_rules: allowlist.resolver_rules(),
             },
             cdp: config.expose_cdp.then(|| CdpAccess {
-                http: endpoint.http.clone(),
-                browser_ws: endpoint.browser_ws.clone(),
+                http: None,
+                browser_ws: String::new(),
+                socket: None,
                 page_target_id: endpoint.page_target_id.clone(),
             }),
             sensitive_notice: SENSITIVE_NOTICE,
             warnings: Vec::new(),
         };
+        let gate = if config.expose_cdp {
+            let (tx, rx) = channel::<super::cdp_expose::UpstreamCmd>();
+            let forward = control_tx.clone();
+            thread::spawn(move || {
+                while let Ok(cmd) = rx.recv() {
+                    if forward
+                        .send(Control::ForwardCdp {
+                            message: cmd.message,
+                            reply: cmd.reply,
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            });
+            match super::cdp_expose::Gate::listen(&config.session_dir, tx) {
+                Ok(gate) => Some(gate),
+                Err(error) => {
+                    let _ = stop_tx.send(());
+                    let _ = join.join();
+                    return Err(StartError::BrowserStart(error));
+                }
+            }
+        } else {
+            None
+        };
+        if let Some(access) = info.cdp.as_mut() {
+            access.socket = gate.as_ref().map(|gate| gate.path().display().to_string());
+        }
         Ok((
             BrowserCapture {
                 allowlist,
@@ -339,6 +380,7 @@ impl BrowserCapture {
                 stop: stop_tx,
                 join: Some(join),
                 status,
+                gate,
             },
             info,
         ))
@@ -432,6 +474,32 @@ impl Cdp {
             } => {
                 let result = self.navigate_page(socket, &url, wait_load, timeout);
                 let _ = reply.send(result);
+            }
+            Control::ForwardCdp { mut message, reply } => {
+                let Some(obj) = message.as_object_mut() else {
+                    let _ = reply.send(
+                        "{\"error\":{\"code\":-32600,\"message\":\"the CDP message is not an object\"}}"
+                            .to_string(),
+                    );
+                    return;
+                };
+                let client_id = obj.get("id").cloned().unwrap_or(Value::Null);
+                let id = self.next_id;
+                self.next_id = self.next_id.saturating_add(1);
+                obj.insert("id".to_string(), json!(id));
+                self.external.insert(
+                    id,
+                    super::cdp_expose::ExternalPending { client_id, reply },
+                );
+                if socket.send_text(message.to_string()).is_err() {
+                    if let Some(pending) = self.external.remove(&id) {
+                        let body = json!({
+                            "id": pending.client_id,
+                            "error": {"code": -32000, "message": "the CDP command was not sent"}
+                        });
+                        let _ = pending.reply.send(body.to_string());
+                    }
+                }
             }
         }
     }
@@ -748,7 +816,15 @@ mod tests {
         let (capture, info) = BrowserCapture::start(config).expect("start");
         assert!(info.allowlist.resolver_rules.contains("EXCLUDE localhost"));
         let cdp = info.cdp.expect("cdp exposed");
-        assert!(cdp.browser_ws.starts_with("ws://127.0.0.1:"));
+        assert!(cdp.http.is_none());
+        assert!(cdp.browser_ws.is_empty());
+        use std::os::unix::fs::PermissionsExt;
+        let socket = cdp.socket.expect("unix socket");
+        assert_eq!(
+            std::fs::metadata(&socket).unwrap().permissions().mode() & 0o777,
+            0o600,
+            "{socket}"
+        );
         assert!(info.browser.version.as_deref().unwrap_or("").contains("Chrome"));
 
         // Layer 2: refusals before anything is sent.
@@ -1350,14 +1426,15 @@ mod tests {
         String::from_utf8_lossy(&out.stdout).to_string()
     }
 
-    /// Review item 5: without `expose_cdp` Chrome opens no port at all
-    /// (`--remote-debugging-pipe`); with `expose_cdp` the port listens ONLY on
-    /// 127.0.0.1 and refuses WebSocket from a web page (Origin present).
+    /// Review item 5: without `expose_cdp` Chrome opens no port. With
+    /// `expose_cdp` it still opens no TCP port; the agent gets a mode-0600 socket
+    /// that refuses `Network.getAllCookies`.
     #[cfg(unix)]
     #[test]
     #[ignore]
     fn live_pipe_opens_no_port_and_exposed_port_is_loopback_only() {
         use std::io::{Read, Write};
+        use std::os::unix::fs::PermissionsExt;
         let site = TestSite::start(|_m, _p| Reply::html("<html><body>ok</body></html>"));
         let port = site.port;
         // 1. Pipe: no port, no --remote-debugging-port.
@@ -1374,42 +1451,33 @@ mod tests {
         assert!(nav.loaded);
         let report = capture.stop().expect("stop");
         assert!(report.graceful && report.netlog == "complete");
-        // 2. Exposed port: only 127.0.0.1, without --remote-allow-origins.
+        // 2. Exposed CDP: still no TCP port. The agent gets a mode-0600 socket.
         let (capture, info) =
             BrowserCapture::start(live_config(vec![format!("localhost:{port}")], "port", true)).expect("start");
         let access = info.cdp.clone().expect("cdp exposed");
         let args = process_args(info.chrome_pid);
-        assert!(args.contains("--remote-debugging-address=127.0.0.1"), "{args}");
-        assert!(!args.contains("--remote-allow-origins"), "{args}");
-        assert!(!args.contains("--remote-debugging-pipe"), "{args}");
-        let listen = lsof_listen(info.chrome_pid);
-        println!("lsof:\n{listen}");
-        let names: Vec<&str> = listen.lines().skip(1).filter_map(|l| l.split_whitespace().nth(8)).collect();
-        assert!(!names.is_empty(), "expected a debugging port: {listen}");
-        for n in &names {
-            assert!(n.starts_with("127.0.0.1:"), "listening outside the loopback: {n}");
-        }
-        // WebSocket from a web page (Origin) is refused; without Origin it is accepted.
-        let ws_path = access.browser_ws.split_once("127.0.0.1:").unwrap().1;
-        let (port_s, path) = ws_path.split_once('/').unwrap();
-        let handshake = |origin: Option<&str>| -> String {
-            let mut s = std::net::TcpStream::connect(format!("127.0.0.1:{port_s}")).unwrap();
-            s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-            let origin_line = origin.map(|o| format!("Origin: {o}\r\n")).unwrap_or_default();
-            write!(
-                s,
-                "GET /{path} HTTP/1.1\r\nHost: 127.0.0.1:{port_s}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n{origin_line}\r\n"
-            )
+        assert!(args.contains("--remote-debugging-pipe"), "{args}");
+        assert!(!args.contains("--remote-debugging-port"), "{args}");
+        assert!(!args.contains("--remote-debugging-address"), "{args}");
+        assert!(lsof_listen(info.chrome_pid).trim().is_empty(), "Chrome opened a port");
+        let socket = access.socket.expect("unix socket");
+        assert_eq!(std::fs::metadata(&socket).unwrap().permissions().mode() & 0o777, 0o600);
+        let mut client = std::os::unix::net::UnixStream::connect(&socket).unwrap();
+        client.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        client
+            .write_all(b"{\"id\":1,\"method\":\"Network.getAllCookies\",\"params\":{}}\0")
             .unwrap();
-            let mut buf = [0u8; 256];
-            let n = s.read(&mut buf).unwrap_or(0);
-            String::from_utf8_lossy(&buf[..n]).lines().next().unwrap_or("").to_string()
-        };
-        let evil = handshake(Some("https://evil.example"));
-        let plain = handshake(None);
-        println!("with Origin: {evil:?}; without Origin: {plain:?}");
-        assert!(!evil.contains("101"), "web page got the WebSocket: {evil}");
-        assert!(plain.contains("101"), "client without Origin should connect: {plain}");
+        let mut buf = Vec::new();
+        loop {
+            let mut byte = [0u8; 1];
+            client.read_exact(&mut byte).unwrap();
+            if byte[0] == 0 {
+                break;
+            }
+            buf.push(byte[0]);
+        }
+        let reply = String::from_utf8(buf).unwrap();
+        assert!(reply.contains("not allowed"), "{reply}");
         let _ = capture.stop().expect("stop");
     }
 

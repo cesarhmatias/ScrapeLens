@@ -171,8 +171,9 @@ impl CaptureBackend for FakeBackend {
                 resolver_rules: allowlist.resolver_rules(),
             },
             cdp: config.expose_cdp.then(|| CdpAccess {
-                http: Some("http://127.0.0.1:1".into()),
-                browser_ws: "ws://127.0.0.1:1/devtools/browser/fake".into(),
+                http: None,
+                browser_ws: String::new(),
+                socket: Some("cdp.sock".into()),
                 page_target_id: Some("T1".into()),
             }),
             sensitive_notice: SENSITIVE_NOTICE,

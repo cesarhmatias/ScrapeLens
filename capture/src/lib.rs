@@ -3,9 +3,9 @@
 //! Regras:
 //! - its own temporary profile (never the personal profile), removed at the end;
 //! - our client talks to Chrome over a **pipe** (`--remote-debugging-pipe`,
-//!   no open port) by default; only with `expose_cdp` (external agent) does
-//!   Chrome open the debugging port, **only on 127.0.0.1**, on an ephemeral port
-//!   (see `docs/16b-mcp-browser.md` §2.5 for the risk);
+//!   no open port). `expose_cdp` does not open a TCP port either: the agent
+//!   gets a mode-0600 unix socket that refuses cookie dumps, download changes,
+//!   and `file:` / `chrome:` URLs (`cdp_expose`);
 //! - it only terminates the process this module started;
 //! - the NetLog is written to the session directory and imported by the core;
 //! - no network beyond local debugging; no certificate is installed;
@@ -29,6 +29,7 @@ use scrapelens_core::{correlate::CorrelationOptions, import_capture_labeled, sto
 
 pub mod allowlist;
 pub mod browser;
+mod cdp_expose;
 pub mod chrome;
 pub mod cookies;
 mod fdio;
@@ -1691,6 +1692,8 @@ struct Cdp {
     page_load_events: u64,
     /// Successful ACKs of setup commands, by (session, method).
     setup_acked: std::collections::HashSet<(String, String)>,
+    /// External `expose_cdp` commands in flight, by the id sent to Chrome.
+    external: HashMap<u64, cdp_expose::ExternalPending>,
 }
 
 /// Target setup command awaiting its ACK.
@@ -1724,6 +1727,7 @@ impl Cdp {
             setup_pending: HashMap::new(),
             page_load_events: 0,
             setup_acked: std::collections::HashSet::new(),
+            external: HashMap::new(),
         })
     }
 
@@ -2489,6 +2493,9 @@ impl Cdp {
         socket: &mut Transport,
         value: &Value,
     ) {
+        if cdp_expose::claim_external(&mut self.external, value) {
+            return;
+        }
         if let Some(id) = value.get("id").and_then(Value::as_u64) {
             if self.on_setup_response(id, value) {
                 return;

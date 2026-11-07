@@ -437,9 +437,12 @@ Five tools connect `scrapelens-capture` (`capture/`) and `scrapelens-recon`
 §5). Dependencies by path; the server reimplements nothing of the capture.
 
 - `start_capture {allowed_hosts[], third_party_hosts?[], start_url?,
-  binary_path?, headless?, expose_cdp?, proxy?}` → `StartInfo` (no paths) +
-  `captureId`, `sessionId` (the directory name the session will have in
+  binary_path?, headless?, expose_cdp?, proxy?}` → `StartInfo` (no session
+  path) + `captureId`, `sessionId` (the directory name the session will have in
   `--sessions-dir`) and `confirmation` (`elicited` | `unconfirmed-flag`).
+  With `expose_cdp=true`, `cdp.socket` is the one filesystem path returned:
+  a mode-0600 unix socket. `cdp.http` is null and `cdp.browserWs` is empty.
+  There is no TCP port.
 - **`proxy`** (optional string): `http://`, `https://`, `socks5://`, `socks5h://`,
   `host:port` (same as `http://`), `user:pass@host:port`, or `host:port:user:pass`.
   Credentials are percent-decoded; IPv6 goes in brackets; socks4, paths, queries and
@@ -528,9 +531,13 @@ Server rules:
   `openWorldHint: true` (traffic to the listed hosts); `stop_capture`
   `readOnlyHint: false` (writes the session); `capture_status` and `site_profile` are
   read-only.
-- `expose_cdp=true` hands the loopback CDP address to the agent (after the
-  `16b` §4.1 gate). The agent's actions through that CDP do **not** go through this
-  confirmation; what limits them is the network allowlist enforced by Chrome.
+- `expose_cdp=true` hands the agent a mode-0600 unix socket (after the
+  `16b` §4.1 gate), not a TCP port. Messages are NUL-terminated JSON.
+  `Network.getAllCookies`, `Browser.setDownloadBehavior`,
+  `Page.setDownloadBehavior`, and any `url` with a `file:` or `chrome:`
+  scheme are refused before they reach Chrome. The agent's other actions
+  through that socket do **not** go through this confirmation; what limits
+  them is that list plus the network allowlist enforced by Chrome.
 
 Tests: `mcp/tests/live.rs` (policy and map, counted backend),
 `mcp/tests/e2e_capture.rs` (real server with the fake browser from the example

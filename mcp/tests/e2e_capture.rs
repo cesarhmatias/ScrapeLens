@@ -75,6 +75,9 @@ fn start_with_accepted_confirmation_runs_the_whole_cycle() {
         started["cdp"]["pageTargetId"], "T1",
         "expose_cdp delivers the address"
     );
+    assert!(started["cdp"]["http"].is_null(), "no TCP port: {started}");
+    assert_eq!(started["cdp"]["browserWs"], "");
+    assert_eq!(started["cdp"]["socket"], "cdp.sock");
 
     // The confirmation text shows everything the user needs to know.
     assert_eq!(client.elicitations.len(), 1);
