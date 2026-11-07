@@ -16,8 +16,9 @@
 //! under the owner. The cost of a flood is therefore the number of generations, not the
 //! number of connections, and a miss ends after [`GENERATIONS`] of them.
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -50,10 +51,12 @@ pub(crate) const CONFIRM_BUDGET: Duration = Duration::from_millis(400);
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) const CHECK_WINDOW: Duration = Duration::from_secs(3);
 
-/// Tree generations one connection may wait for before its miss is final. A connection
-/// that is already established is listed by the first generation that starts after it.
+/// Tree generations one connection may wait for before its miss is final. One complete
+/// generation that starts after the connection arrived decides it. More generations only
+/// repeat the same scan under a flood: measured on Chrome, a second one costs pages (review-013
+/// M1), and a stranger that a complete scan does not list is not in the tree.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-const GENERATIONS: usize = 4;
+const GENERATIONS: usize = 1;
 
 /// Bounds the connections or scans that run at the same time. A permit is held for as long as
 /// the work it counts.
@@ -127,6 +130,60 @@ struct Tree {
     view: Option<Arc<View>>,
 }
 
+/// One connection waiting for its check. `cancelled` is set when a newer arrival needs its slot.
+pub(crate) struct Ticket {
+    pub(crate) cancelled: AtomicBool,
+}
+
+/// The connections that wait for their check, oldest first, bounded by `limit`. At the limit the
+/// oldest waiter is cancelled and its slot taken: the newest arrival is the one a flood cannot
+/// have held out longer than the others. A cancelled waiter refuses itself on its next wakeup.
+pub(crate) struct Pending {
+    limit: usize,
+    order: Mutex<VecDeque<Arc<Ticket>>>,
+}
+
+impl Pending {
+    pub(crate) fn new(limit: usize) -> Arc<Pending> {
+        Arc::new(Pending { limit: limit.max(1), order: Mutex::new(VecDeque::new()) })
+    }
+
+    /// Takes a slot for a new waiter. Returns its ticket, and whether the oldest waiter was
+    /// cancelled to make room.
+    pub(crate) fn enter(&self) -> (Arc<Ticket>, bool) {
+        let mut order = self.order.lock().unwrap_or_else(|poison| poison.into_inner());
+        let mut evicted = false;
+        if order.len() >= self.limit {
+            if let Some(oldest) = order.pop_front() {
+                oldest.cancelled.store(true, Ordering::SeqCst);
+                evicted = true;
+            }
+        }
+        let ticket = Arc::new(Ticket { cancelled: AtomicBool::new(false) });
+        order.push_back(Arc::clone(&ticket));
+        (ticket, evicted)
+    }
+
+    /// Frees the slot of a waiter that has finished. A waiter that was already cancelled has no
+    /// slot left, and nothing is removed.
+    pub(crate) fn leave(&self, ticket: &Arc<Ticket>) {
+        let mut order = self.order.lock().unwrap_or_else(|poison| poison.into_inner());
+        if let Some(at) = order.iter().position(|waiting| Arc::ptr_eq(waiting, ticket)) {
+            order.remove(at);
+        }
+    }
+}
+
+/// The part of the window that the generation wait leaves to the direct look. Without it, a
+/// wait that runs to the window leaves the direct look nothing to read with.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+const DIRECT_RESERVE: Duration = Duration::from_secs(1);
+
+/// How often a waiting connection looks at its cancel flag. Short enough that a cancelled waiter
+/// is refused within a few milliseconds, long enough that a waiter does not spin.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+const CANCEL_SLICE: Duration = Duration::from_millis(20);
+
 /// The state every connection of one relay shares: the owner-tree view, and the bound on
 /// the checks that read the process table one connection at a time (after a miss).
 pub(crate) struct Peers {
@@ -173,6 +230,7 @@ impl Peers {
         deadline: Instant,
         window: Instant,
         scan: fn(u32, Instant) -> Result<HashSet<Tuple>, ()>,
+        cancel: &AtomicBool,
     ) -> Option<Arc<View>> {
         let mut tree = self.tree.lock().ok()?;
         let need = tree.started + 1;
@@ -194,38 +252,51 @@ impl Peers {
                 continue;
             }
             let now = Instant::now();
-            if now >= deadline {
+            if now >= deadline || cancel.load(Ordering::SeqCst) {
                 return None;
             }
-            tree = self.moved.wait_timeout(tree, deadline - now).ok()?.0;
+            tree = self.moved.wait_timeout(tree, (deadline - now).min(CANCEL_SLICE)).ok()?.0;
         }
     }
 }
 
 /// `owner` is the browser pid published by the capture. Zero means it is not known yet.
 /// `client` is the address the relay sees for the connection, `listen` the relay's own.
-pub(crate) fn admit(
+pub(crate) fn admit_cancellable(
     client: SocketAddr,
     listen: SocketAddr,
     owner: u32,
     peers: &Arc<Peers>,
+    cancel: &AtomicBool,
 ) -> Result<(), &'static str> {
     if owner == 0 {
         return Err("the capture browser is not running yet");
     }
     #[cfg(target_os = "linux")]
     {
-        linux::admit(client, listen, owner, peers)
+        linux::admit(client, listen, owner, peers, cancel)
     }
     #[cfg(target_os = "macos")]
     {
-        macos::admit(client, listen, owner, peers)
+        macos::admit(client, listen, owner, peers, cancel)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
-        let _ = (client, listen, owner, peers);
+        let _ = (client, listen, owner, peers, cancel);
         Err("the client process could not be confirmed")
     }
+}
+
+/// A check that nobody cancels. Tests use it; the relay passes its waiter's flag.
+#[cfg(test)]
+pub(crate) fn admit(
+    client: SocketAddr,
+    listen: SocketAddr,
+    owner: u32,
+    peers: &Arc<Peers>,
+) -> Result<(), &'static str> {
+    static NEVER: AtomicBool = AtomicBool::new(false);
+    admit_cancellable(client, listen, owner, peers, &NEVER)
 }
 
 /// Checks one connection against the owner tree. A hit returns on the first generation that
@@ -241,6 +312,7 @@ fn in_tree(
     peers: &Peers,
     scan: fn(u32, Instant) -> Result<HashSet<Tuple>, ()>,
     direct: fn(u32, SocketAddr, SocketAddr, Instant) -> Result<bool, ()>,
+    cancel: &AtomicBool,
 ) -> Result<(), &'static str> {
     let wanted: Tuple = (
         SocketAddr::new(canonical(client.ip()), client.port()),
@@ -251,10 +323,16 @@ fn in_tree(
     let window = Instant::now() + CHECK_WINDOW;
     // The generation wait runs to the window. A scan serves every connection that waits for it,
     // so a flood costs one scan per generation instead of one direct look per connection.
-    let deadline = window;
+    let deadline = window.checked_sub(DIRECT_RESERVE).unwrap_or(window);
     let mut last = UNCONFIRMED;
     for _ in 0..GENERATIONS {
-        let Some(view) = peers.fresh(owner, deadline, window, scan) else {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(UNCONFIRMED);
+        }
+        let Some(view) = peers.fresh(owner, deadline, window, scan, cancel) else {
+            if cancel.load(Ordering::SeqCst) {
+                return Err(UNCONFIRMED);
+            }
             // No generation finished in time: one direct look at the owner tree answers
             // this connection instead of another wait.
             return match direct(owner, client, listen, window) {
@@ -305,16 +383,27 @@ fn canonical(ip: IpAddr) -> IpAddr {
 mod linux {
     use std::collections::HashSet;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::time::Instant;
 
     use super::{canonical, checked, in_tree, Gate, Peers, Tuple, UNCONFIRMED};
 
-    pub(crate) fn admit(client: SocketAddr, listen: SocketAddr, owner: u32, peers: &Arc<Peers>) -> Result<(), &'static str> {
-        let last = match in_tree(client, listen, owner, peers, tree_tuples, direct_tree_has) {
+    pub(crate) fn admit(
+        client: SocketAddr,
+        listen: SocketAddr,
+        owner: u32,
+        peers: &Arc<Peers>,
+        cancel: &AtomicBool,
+    ) -> Result<(), &'static str> {
+        let last = match in_tree(client, listen, owner, peers, tree_tuples, direct_tree_has, cancel) {
             Ok(()) => return Ok(()),
             Err(reason) => reason,
         };
+        // A waiter cancelled for a newer arrival has no slot to keep: it is refused here.
+        if cancel.load(Ordering::SeqCst) {
+            return Err(UNCONFIRMED);
+        }
         // The browser tree does not list this socket. A row that is gone, or whose inode
         // column is zero, has no owner: the kernel keeps such a row only after the last
         // process released the socket, so nobody can read a tunnel reply and the connection
@@ -636,7 +725,8 @@ mod linux {
             let _accepted = listener.accept().unwrap();
             let client_addr = client.local_addr().unwrap();
             let mut sleeper = Command::new("/bin/sleep").arg("30").spawn().unwrap();
-            let verdict = admit(client_addr, listen, sleeper.id(), &Peers::new(8));
+            let never = std::sync::atomic::AtomicBool::new(false);
+            let verdict = admit(client_addr, listen, sleeper.id(), &Peers::new(8), &never);
             let _ = sleeper.kill();
             let _ = sleeper.wait();
             // A live stranger is refused. Under load its check can end at the window, which gives the
@@ -652,6 +742,7 @@ mod macos {
     use std::collections::HashSet;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use std::os::raw::c_void;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::time::Instant;
 
@@ -688,11 +779,21 @@ mod macos {
         fn proc_pidfdinfo(pid: i32, fd: i32, flavor: i32, buffer: *mut c_void, buffersize: i32) -> i32;
     }
 
-    pub(crate) fn admit(client: SocketAddr, listen: SocketAddr, owner: u32, peers: &Arc<Peers>) -> Result<(), &'static str> {
-        let last = match in_tree(client, listen, owner, peers, tree_tuples, direct_tree_has) {
+    pub(crate) fn admit(
+        client: SocketAddr,
+        listen: SocketAddr,
+        owner: u32,
+        peers: &Arc<Peers>,
+        cancel: &AtomicBool,
+    ) -> Result<(), &'static str> {
+        let last = match in_tree(client, listen, owner, peers, tree_tuples, direct_tree_has, cancel) {
             Ok(()) => return Ok(()),
             Err(reason) => reason,
         };
+        // A waiter cancelled for a newer arrival has no slot to keep: it is refused here.
+        if cancel.load(Ordering::SeqCst) {
+            return Err(UNCONFIRMED);
+        }
         // The owner tree does not list this socket. A stranger that is still reading has
         // it open somewhere else. A Chrome cancel has already dropped the descriptor, so
         // nobody can read a tunnel reply.
@@ -777,23 +878,42 @@ mod macos {
         if incomplete { Err(()) } else { Ok(None) }
     }
 
-    fn all_pids() -> Result<Vec<u32>, ()> {
+    /// The return of a libproc call that fails with -1 or with zero and errno set. errno is cleared
+    /// first, so a zero with errno clear is an answer (an empty list), not a failure.
+    /// `Err` carries the errno of the failure.
+    fn libproc_return(call: impl FnOnce() -> i32) -> Result<i32, i32> {
+        // SAFETY: `__error` returns this thread's errno location, which is valid to write.
+        unsafe {
+            *libc::__error() = 0;
+        }
+        let got = call();
+        let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+        if got < 0 || (got == 0 && errno != 0) {
+            return Err(if errno != 0 { errno } else { libc::EIO });
+        }
+        Ok(got)
+    }
+
+    pub(super) fn all_pids() -> Result<Vec<u32>, ()> {
         let mut cap = 256usize;
         for _ in 0..6 {
             let mut buf = vec![0i32; cap];
-            // SAFETY: `buf` is writable for `buf.len() * 4` bytes. The call only fills that buffer.
-            let got = unsafe {
-                proc_listallpids(buf.as_mut_ptr().cast::<c_void>(), (buf.len() * 4) as i32)
-            };
-            if got < 0 {
+            // proc_listallpids returns the number of pids it wrote, not a byte count. A full
+            // buffer may hide more processes, so the buffer grows and the list is read again.
+            let count = libproc_return(|| {
+                // SAFETY: `buf` is writable for `buf.len() * 4` bytes. The call only fills that buffer.
+                unsafe { proc_listallpids(buf.as_mut_ptr().cast::<c_void>(), (buf.len() * 4) as i32) }
+            })
+            .map_err(|_| ())?;
+            // Zero processes is not an answer: launchd always runs, so an empty list is a failed read.
+            if count == 0 {
                 return Err(());
             }
-            let bytes = got as usize;
-            if bytes >= buf.len() * 4 {
+            let count = count as usize;
+            if count >= buf.len() {
                 cap = cap.saturating_mul(2);
                 continue;
             }
-            let count = bytes / 4;
             return Ok(buf
                 .into_iter()
                 .take(count)
@@ -818,15 +938,33 @@ mod macos {
 
     /// The TCP and generic Internet sockets of `pid`, as canonical (local, remote) pairs.
     fn socket_tuples(pid: u32, window: Option<Instant>) -> Result<HashSet<Tuple>, ()> {
-        let mut list = vec![0u8; 4096 * 8];
-        // SAFETY: `list` is writable for its length. The kernel writes at most that many bytes.
-        let got = unsafe {
-            proc_pidinfo(pid as i32, PROC_PIDLISTFDS, 0, list.as_mut_ptr().cast::<c_void>(), list.len() as i32)
+        // A process with more descriptors than the buffer holds is read again with a larger one:
+        // a full buffer may hide the rest, and a short list would miss the connection it holds.
+        let mut capacity = 4096usize * 8;
+        let (list, got) = loop {
+            let mut list = vec![0u8; capacity];
+            let got = match libproc_return(|| {
+                // SAFETY: `list` is writable for its length. The kernel writes at most that many bytes.
+                unsafe { proc_pidinfo(pid as i32, PROC_PIDLISTFDS, 0, list.as_mut_ptr().cast::<c_void>(), list.len() as i32) }
+            }) {
+                Ok(got) => got as usize,
+                // Another user's process cannot be read, and it is not the owner's descendant: it
+                // adds nothing the owner tree or the post-miss holder check could admit. A process
+                // that exited after the listing holds no socket. Neither is a failed scan. Any other
+                // error still fails the scan.
+                Err(libc::EPERM | libc::ESRCH) => return Ok(HashSet::new()),
+                Err(_) => return Err(()),
+            };
+            if got >= list.len() {
+                capacity = capacity.checked_mul(2).filter(|next| *next <= 1 << 22).ok_or(())?;
+                continue;
+            }
+            break (list, got);
         };
-        if got < 0 || got as usize >= list.len() || got as usize % 8 != 0 {
+        if got % 8 != 0 {
             return Err(());
         }
-        let fds = got as usize / 8;
+        let fds = got / 8;
         let mut tuples = HashSet::new();
         for index in 0..fds {
             if window.is_some_and(|until| Instant::now() >= until) {
@@ -858,18 +996,25 @@ mod macos {
     /// not TCP or Internet, or that vanished since the list was read.
     fn socket_tuple(pid: u32, fd: i32) -> Result<Option<Tuple>, ()> {
         let mut info = vec![0u8; SOCKET_FDINFO_SIZE];
-        // SAFETY: `info` is exactly `sizeof(struct socket_fdinfo)` and is writable.
-        let got = unsafe {
-            proc_pidfdinfo(
-                pid as i32,
-                fd,
-                PROC_PIDFDSOCKETINFO,
-                info.as_mut_ptr().cast::<c_void>(),
-                info.len() as i32,
-            )
+        let got = match libproc_return(|| {
+            // SAFETY: `info` is exactly `sizeof(struct socket_fdinfo)` and is writable.
+            unsafe {
+                proc_pidfdinfo(
+                    pid as i32,
+                    fd,
+                    PROC_PIDFDSOCKETINFO,
+                    info.as_mut_ptr().cast::<c_void>(),
+                    info.len() as i32,
+                )
+            }
+        }) {
+            Ok(got) => got,
+            // The descriptor or its process can vanish between the list and this call. Then it
+            // holds no socket any more, which is not a failed scan.
+            Err(libc::ENOENT | libc::EBADF | libc::ESRCH) => return Ok(None),
+            Err(_) => return Err(()),
         };
         if got == 0 {
-            // The descriptor can vanish between the list and this call.
             return Ok(None);
         }
         if got < SOCKET_FDINFO_SIZE as i32 {
@@ -932,6 +1077,16 @@ mod macos {
         }
         Ok(u32::from_le_bytes(info[OFF_PPID..OFF_PPID + 4].try_into().unwrap()))
     }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+#[test]
+fn the_process_list_is_every_process_not_the_newest_64() {
+    // proc_listallpids returns a count. The reader that treated it as bytes saw only the newest 64
+    // processes, so a real owner that was not among them could never be found.
+    let pids = macos::all_pids().expect("the process list reads");
+    assert!(pids.contains(&std::process::id()), "this process is listed");
+    assert!(pids.len() > 64, "only {} processes listed", pids.len());
 }
 
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
@@ -1260,5 +1415,38 @@ mod same_port_tests {
         let verdict = admit(stranger_addr, listen, owner, &Peers::new(64));
         drop(stranger);
         assert!(verdict.is_err(), "a stranger with the browser's port was admitted: {verdict:?}");
+    }
+}
+
+#[cfg(test)]
+mod pending_tests {
+    use std::sync::atomic::Ordering;
+
+    use super::Pending;
+
+    /// At the limit the oldest waiter is cancelled, never the newest arrival.
+    #[test]
+    fn the_oldest_waiter_is_cancelled_at_the_limit() {
+        let pending = Pending::new(2);
+        let (first, evicted) = pending.enter();
+        assert!(!evicted);
+        let (second, evicted) = pending.enter();
+        assert!(!evicted);
+        let (third, evicted) = pending.enter();
+        assert!(evicted, "the third arrival takes a slot from the oldest");
+        assert!(first.cancelled.load(Ordering::SeqCst), "the oldest waiter is cancelled");
+        assert!(!second.cancelled.load(Ordering::SeqCst), "a newer waiter is kept");
+        assert!(!third.cancelled.load(Ordering::SeqCst), "the newest arrival is kept");
+    }
+
+    /// A finished waiter frees its slot, so nothing is evicted for it.
+    #[test]
+    fn a_finished_waiter_frees_its_slot() {
+        let pending = Pending::new(2);
+        let (first, _) = pending.enter();
+        let (_second, _) = pending.enter();
+        pending.leave(&first);
+        let (_third, evicted) = pending.enter();
+        assert!(!evicted, "a freed slot is taken without an eviction");
     }
 }

@@ -874,6 +874,20 @@ mod tests {
             unsafe { libc::geteuid() }
         }
 
+        /// A forked child of a parallel test can briefly hold the copied binary open for writing,
+        /// and exec then fails with ETXTBSY. That is the copy racing another fork, not the check
+        /// under test, so the attempt is repeated while that error is the only failure.
+        fn not_busy(mut attempt: impl FnMut() -> ChromeError) -> ChromeError {
+            for _ in 0..50 {
+                let err = attempt();
+                if !format!("{err:?}").contains("Text file busy") {
+                    return err;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            attempt()
+        }
+
         /// Test tree: `<root>/opt/chrome/chrome` (copy of a real ELF, mode 0755)
         /// with 0755 directories, all owned by the current user.
         fn tree(tag: &str) -> (PathBuf, PathBuf) {
@@ -1056,7 +1070,7 @@ mod tests {
             let link = root.join("google-chrome-stable");
             symlink(&binary, &link).unwrap();
             // The link resolves to the canonical one; validation runs on the canonical one.
-            let err = validate_chrome_linux_from(&link, euid(), &root).unwrap_err();
+            let err = not_busy(|| validate_chrome_linux_from(&link, euid(), &root).unwrap_err());
             assert!(matches!(err, ChromeError::UnexpectedBundle(_)), "{err:?}");
             assert_eq!(std::fs::canonicalize(&link).unwrap(), std::fs::canonicalize(&binary).unwrap());
             let _ = std::fs::remove_dir_all(root);
