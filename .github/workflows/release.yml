@@ -1,0 +1,172 @@
+# Release by tag (T22). Builds the Linux packages (.deb and AppImage, x86_64 and arm64) and the macOS
+# arm64 .app, checks them, attests their build provenance and opens a DRAFT GitHub release.
+# It never publishes: a person reviews the draft and publishes it by hand.
+#
+# Signing, stated plainly:
+# - Linux packages are not signed (SHA-256 and attestation only).
+# - The macOS .app is NOT signed with the Developer ID certificate and is NOT notarized. Those need
+#   the Apple Developer Program (US$ 99 per year) and are task T23. The bundler is told to use the
+#   ad-hoc identity ("-") here, because the configured local identity ("ScrapeLens Local Signing")
+#   exists only on the maintainer's Mac. The release notes say so.
+# - No secrets are used. The default GITHUB_TOKEN creates the draft, with the minimum permissions below.
+#
+# Test-only code is not shipped: the release binaries are built without the `test-hooks` feature, and
+# the release gate fails the run if a test variable name is found in any shipped binary.
+name: Release (draft)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RUST_VERSION: "1.98.1"
+  NODE_VERSION: "26.8.1"
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.arch }} packages
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build, test and smoke in the pinned container (src-tauri/linux/build.sh)
+        run: |
+          docker build --platform "linux/${{ matrix.arch }}" -f src-tauri/linux/Dockerfile -t "scrapelens-release:${{ matrix.arch }}" .
+          mkdir -p out
+          docker run --rm --platform "linux/${{ matrix.arch }}" -v "$PWD/out:/out" "scrapelens-release:${{ matrix.arch }}"
+
+      - name: Keep the release files and check them
+        run: |
+          set -euo pipefail
+          src="out/${{ matrix.arch }}"
+          mkdir -p release
+          cp "$src"/*.deb "release/"
+          cp "$src"/*.AppImage "release/"
+          cp "$src/scrapelens" "release/scrapelens-linux-${{ matrix.arch }}"
+          # The smoke binary is built with test-hooks: it is a test artifact and is never shipped.
+          for v in SCRAPELENS_TEST_MODE SCRAPELENS_CAPTURE_HEADLESS SCRAPELENS_CAPTURE_IGNORE_CERT SCRAPELENS_CAPTURE_NETWORK SCRAPELENS_CAPTURE_URL SCRAPELENS_TEST_PROXY_BYPASS_LOOPBACK SCRAPELENS_TEST_PROXY_CA SCRAPELENS_CDP_TRANSPORT SCRAPELENS_RELAY_PEER_PROBE; do
+            if grep -a -q "$v" "release/scrapelens-linux-${{ matrix.arch }}"; then
+              echo "::error::test-only variable $v found in the release binary"; exit 1
+            fi
+          done
+          ls -la release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: release/*
+          if-no-files-found: error
+
+  macos:
+    name: macOS arm64 app (ad-hoc signature, not notarized)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.98.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: npm ci (app)
+        working-directory: app
+        run: npm ci --no-audit --no-fund
+
+      - name: Build the .app without test-hooks (ad-hoc identity; Developer ID and notarization are T23)
+        run: |
+          ./app/node_modules/.bin/tauri build --bundles app --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}'
+
+      - name: Check the bundle (signature stated, no test-only variables)
+        run: |
+          set -euo pipefail
+          app="src-tauri/target/release/bundle/macos/ScrapeLens.app"
+          bin="$app/Contents/MacOS/scrapelens"
+          echo "Signature (must be ad-hoc here, not Developer ID):"
+          codesign -dv --verbose=2 "$app" 2>&1 | grep -E "Signature|Authority|TeamIdentifier" || true
+          codesign --verify --deep --strict "$app"
+          if codesign -dv --verbose=4 "$app" 2>&1 | grep -q "Authority=Developer ID"; then
+            echo "::error::unexpected Developer ID signature in a T22 build"; exit 1
+          fi
+          for v in SCRAPELENS_TEST_MODE SCRAPELENS_CAPTURE_HEADLESS SCRAPELENS_CAPTURE_IGNORE_CERT SCRAPELENS_CAPTURE_NETWORK SCRAPELENS_CAPTURE_URL SCRAPELENS_TEST_PROXY_BYPASS_LOOPBACK SCRAPELENS_TEST_PROXY_CA SCRAPELENS_CDP_TRANSPORT SCRAPELENS_RELAY_PEER_PROBE; do
+            if grep -a -q "$v" "$bin"; then
+              echo "::error::test-only variable $v found in the release binary"; exit 1
+            fi
+          done
+          mkdir -p release
+          ditto -c -k --keepParent "$app" "release/ScrapeLens-${GITHUB_REF_NAME#v}-macos-arm64.zip"
+          ls -la release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: release/*
+          if-no-files-found: error
+
+  draft-release:
+    name: Attest and open a draft release
+    needs: [linux, macos]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*"
+          merge-multiple: true
+          path: files
+
+      - name: SHA-256 sums
+        working-directory: files
+        run: sha256sum ./* > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Build provenance attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "files/*"
+
+      - name: Draft release notes
+        run: |
+          cat > notes.md <<'NOTES'
+          ScrapeLens ${{ github.ref_name }} — DRAFT, not published.
+
+          Files: Linux .deb and AppImage (x86_64 and arm64), Linux binaries, the macOS arm64 .app (zip) and SHA256SUMS.txt.
+          Build provenance: attested with actions/attest-build-provenance (verify with `gh attestation verify`).
+
+          Signing status:
+          - Linux packages: not signed (checksums and attestation only).
+          - macOS .app: ad-hoc signature only. Not signed with the Developer ID certificate and not notarized (task T23, needs the Apple Developer Program). Gatekeeper may block it on download until T23 is done.
+
+          Test-only code: not included. The release gate checked the shipped binaries for the test variables.
+          Validation: build.sh tests, clippy and smoke ran in the pinned container on each architecture.
+          NOTES
+
+      - name: Create the draft release (not published)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" --draft --verify-tag \
+            --title "ScrapeLens ${{ github.ref_name }} (draft)" --notes-file notes.md \
+            files/*
