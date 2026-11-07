@@ -39,3 +39,8 @@ test-hooks = []
 # HTTPS upstream tests mint a synthetic CA in memory. scrapelens-testserver::cert::test_tls()
 # would compile quiche into every capture test; rcgen does not, and it leaves no key in the tree.
 rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pem"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Keychain reads for the browser cookie key (T09), instead of /usr/bin/security, so the prompt names
+# this app. 3.6.0 builds on rustc 1.80; 3.7 needs rustc 1.85.
+security-framework = "=3.6.0"

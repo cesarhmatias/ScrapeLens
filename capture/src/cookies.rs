@@ -1029,48 +1029,74 @@ fn chromium_keys(product: &ChromiumProduct, version_prefix: &[u8]) -> Vec<Result
     }
 }
 
+/// How long a Keychain read may take, a pending access prompt included. Past it the import
+/// reports the Keychain instead of waiting. The read itself is not cancelled: its thread ends
+/// when the prompt is answered or refused.
+#[cfg(any(target_os = "macos", test))]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const KEYCHAIN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Runs `read` on its own thread and returns its result, or `None` when it has not finished
+/// within `deadline`. A blocking call (the Keychain asking the user) cannot hold the caller.
+#[cfg(any(target_os = "macos", test))]
+fn read_within<T: Send + 'static>(
+    deadline: std::time::Duration,
+    read: impl FnOnce() -> T + Send + 'static,
+) -> Option<T> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(read());
+    });
+    receiver.recv_timeout(deadline).ok()
+}
+
+/// The message for a Keychain read that failed, from its `OSStatus`. Refusing the access prompt
+/// is the case the user can act on, so it says what to allow.
+#[cfg(any(target_os = "macos", test))]
+fn keychain_refusal(service: &str, status: i32) -> String {
+    match status {
+        // errSecUserCanceled: the prompt was dismissed or refused.
+        -128 => format!(
+            "ScrapeLens was refused access to the \"{service}\" key in the Keychain. Importing cookies from this browser needs that access: run the import again and click Allow."
+        ),
+        // errSecAuthFailed: the Keychain did not grant this app access.
+        -25293 => format!(
+            "the Keychain did not give ScrapeLens access to the \"{service}\" key. Run the import again and allow access when macOS asks."
+        ),
+        // errSecItemNotFound: the browser keeps no key under this name.
+        -25300 => format!(
+            "the Keychain has no \"{service}\" item, so this browser's cookies cannot be decrypted. Check that the browser is installed and has signed in once."
+        ),
+        // errSecInteractionNotAllowed: a prompt was needed but the Keychain cannot show one now.
+        -25308 => "the Keychain needs to ask for access and cannot show the request now. Unlock the login Keychain and try again.".to_string(),
+        other => format!("could not read the \"{service}\" key from the Keychain (status {other})."),
+    }
+}
+
+/// Reads a browser's Safe Storage password with `security-framework`, so the access prompt names
+/// ScrapeLens and not `/usr/bin/security`. A value with trailing newlines loses them.
 #[cfg(target_os = "macos")]
 fn keychain_password(service: &str, account: &str) -> Result<zeroize::Zeroizing<Vec<u8>>, String> {
-    let mut child = Command::new("/usr/bin/security")
-        .args(["find-generic-password", "-w", "-s", service, "-a", account])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("Keychain ({service}): {error}"))?;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let output = child
-                    .wait_with_output()
-                    .map_err(|error| format!("Keychain ({service}): {error}"))?;
-                if !status.success() {
-                    return Err(format!(
-                        "could not read the \"{service}\" password from the Keychain; authorize access and try again"
-                    ));
-                }
-                let mut password = output.stdout;
-                while matches!(password.last(), Some(b'\n') | Some(b'\r')) {
-                    password.pop();
-                }
-                if password.is_empty() {
-                    return Err(format!("the \"{service}\" password in the Keychain came back empty"));
-                }
-                return Ok(zeroize::Zeroizing::new(password));
-            }
-            Ok(None) if std::time::Instant::now() < deadline => {
-                std::thread::sleep(std::time::Duration::from_millis(50));
-            }
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!(
-                    "the Keychain did not respond within 30 s for \"{service}\" (authorization pending?)"
-                ));
-            }
+    let (service_owned, account_owned) = (service.to_string(), account.to_string());
+    let read = read_within(KEYCHAIN_DEADLINE, move || {
+        security_framework::passwords::get_generic_password(&service_owned, &account_owned)
+    });
+    let mut password = match read {
+        None => {
+            return Err(format!(
+                "the Keychain did not answer within 30 s for \"{service}\"; an access prompt may still be waiting"
+            ))
         }
+        Some(Err(error)) => return Err(keychain_refusal(service, error.code())),
+        Some(Ok(password)) => password,
+    };
+    while matches!(password.last(), Some(b'\n') | Some(b'\r')) {
+        password.pop();
     }
+    if password.is_empty() {
+        return Err(format!("the \"{service}\" password in the Keychain came back empty"));
+    }
+    Ok(zeroize::Zeroizing::new(password))
 }
 
 /// How long the browser's key may take to come back from the keyring. A locked keyring
@@ -2685,5 +2711,57 @@ mod tests {
             .encrypt_padded_mut::<Pkcs7>(&mut buffer, plain.len())
             .expect("buffer holds one extra block");
         encrypted.to_vec()
+    }
+}
+
+#[cfg(test)]
+mod keychain_tests {
+    use super::*;
+
+    #[test]
+    fn a_read_past_its_deadline_is_reported_not_waited_for() {
+        let started = std::time::Instant::now();
+        let got = read_within(std::time::Duration::from_millis(50), || {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            1
+        });
+        assert_eq!(got, None);
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_read_inside_its_deadline_returns_its_value() {
+        assert_eq!(read_within(std::time::Duration::from_secs(5), || 7), Some(7));
+    }
+
+    #[test]
+    fn a_refused_prompt_names_the_key_and_what_to_allow() {
+        let text = keychain_refusal("Chrome Safe Storage", -128);
+        assert!(text.contains("refused"), "{text}");
+        assert!(text.contains("Chrome Safe Storage"), "{text}");
+        assert!(text.contains("click Allow"), "{text}");
+    }
+
+    #[test]
+    fn each_keychain_status_has_its_own_message() {
+        let statuses = [-128, -25293, -25300, -25308, -1];
+        let messages: std::collections::HashSet<String> =
+            statuses.iter().map(|status| keychain_refusal("key", *status)).collect();
+        assert_eq!(messages.len(), statuses.len());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    #[ignore = "writes and deletes a test item in the login Keychain; run by hand on macOS"]
+    fn keychain_reads_a_test_item_and_names_a_missing_one() {
+        let service = format!("ScrapeLens test key {}", std::process::id());
+        let account = "ScrapeLens test";
+        security_framework::passwords::set_generic_password(&service, account, b"test-key-0123")
+            .expect("the test item is created");
+        let read = keychain_password(&service, account);
+        let _ = security_framework::passwords::delete_generic_password(&service, account);
+        assert_eq!(&read.expect("the test item reads")[..], b"test-key-0123");
+        let missing = keychain_password(&service, account).unwrap_err();
+        assert!(missing.contains("has no"), "{missing}");
     }
 }
