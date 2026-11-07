@@ -137,6 +137,13 @@ pub fn sanitize_bundle_owned(bundle: SessionBundle, options: &SanitizeOptions) -
     let counter = |key: &str, redactions: &mut BTreeMap<String, usize>| {
         *redactions.entry(key.to_string()).or_default() += 1;
     };
+    // Wire evidence (HPACK-decoded headers, ClientHello) may contain credentials;
+    // it never reaches a sanitized export.
+    if !session.h2_wire.is_empty() || !session.tls_hellos.is_empty() {
+        counter("wireEvidence", &mut redactions);
+    }
+    session.h2_wire.clear();
+    session.tls_hellos.clear();
 
     for request in &mut session.requests {
         request.url = sanitize_url(&request.url, options);

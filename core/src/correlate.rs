@@ -13,7 +13,10 @@ use std::collections::{BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Attempt, AttemptOutcome, HeaderEvidence, HeaderRole, MatchCandidate, MatchState, NetworkState, Protocol, SessionV1, StreamSession, Verification, Warning};
+use crate::model::{
+    Attempt, AttemptOutcome, HeaderEvidence, HeaderRole, MatchCandidate, MatchState, NetworkState,
+    Protocol, SessionV1, StreamSession, Verification, Warning,
+};
 use crate::parse::netlog::{
     not_sent_note, NetlogAttempt, NetlogCapture, NetlogHeaderEvent, NetlogUrlRequest,
 };
@@ -357,7 +360,10 @@ fn find_candidates<'a>(
         // ended cancelled or failed; it never competes with a request that got a status.
         if netlog_attempt.not_sent.is_some()
             && !(attempt.status.is_none()
-                && matches!(attempt.outcome, AttemptOutcome::Aborted | AttemptOutcome::Failed))
+                && matches!(
+                    attempt.outcome,
+                    AttemptOutcome::Aborted | AttemptOutcome::Failed
+                ))
         {
             continue;
         }
@@ -672,6 +678,12 @@ fn attach_candidate(
         if let Some(event) = event {
             if let Some(stream_id) = event.stream_id {
                 push_unique(&mut attempt.netlog.stream_ids, stream_id);
+            }
+            if let Some(connection_source_id) = event.connection_source_id {
+                push_unique(
+                    &mut attempt.netlog.connection_source_ids,
+                    connection_source_id,
+                );
             }
             let evidence_id = format!("corr-{}-{}", attempt.id, attempt.header_evidence.len() + 1);
             let evidence_protocol = if event.protocol == Protocol::H1

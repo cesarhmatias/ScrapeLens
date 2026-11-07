@@ -190,8 +190,8 @@ const VERSIONED: &[(&str, u64, usize)] = &[
     ),
     (
         "experiments/results/contract-h2",
-        0x57425b16b7c09b9c,
-        1164451,
+        0x737c63c984282bb7,
+        1223735,
     ),
     (
         "experiments/results/contract-h3",
@@ -209,13 +209,13 @@ const VERSIONED: &[(&str, u64, usize)] = &[
     ("experiments/results/h1-set3", 0x5f5c8ceabea88974, 132921),
     (
         "experiments/results/h2-cookieprobe",
-        0x7fe13ad22119693b,
-        155066,
+        0x1662e327b69dd335,
+        164193,
     ),
-    ("experiments/results/h2-ordered", 0x13de0b51570b04da, 142885),
-    ("experiments/results/h2-page", 0xf918f3a4d17924b6, 974822),
-    ("experiments/results/h2-plain", 0x11352b47cdef5d69, 148744),
-    ("experiments/results/h2-set3", 0x02716ac77df31e69, 164635),
+    ("experiments/results/h2-ordered", 0xe11d92a4978ad2ab, 152706),
+    ("experiments/results/h2-page", 0x075deadca610cda8, 1017795),
+    ("experiments/results/h2-plain", 0x0762d6be17cc9b31, 157613),
+    ("experiments/results/h2-set3", 0x95de46596437fc7d, 174055),
     (
         "experiments/results/h3-cookieprobe",
         0xb7ced12a9184c53d,

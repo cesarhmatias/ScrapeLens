@@ -76,6 +76,7 @@ fn netlog_header_event(name: &str, role: HeaderRole, time: f64) -> NetlogHeaderE
         time: Some(time),
         source_id: Some(77),
         stream_id: None,
+        connection_source_id: None,
         dependency_id: None,
         protocol: Protocol::H1,
         role,

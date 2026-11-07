@@ -3,7 +3,9 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::entities::{Connection, LogicalRequest, StreamSession};
+use super::entities::{
+    Connection, H2ConnectionEvidence, LogicalRequest, StreamSession, TlsHelloEvidence,
+};
 
 pub const SCHEMA_VERSION: u32 = 1;
 
@@ -316,6 +318,10 @@ pub struct SessionV1 {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stream_sessions: Vec<StreamSession>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub h2_wire: Vec<H2ConnectionEvidence>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tls_hellos: Vec<TlsHelloEvidence>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<Warning>,
 }
 
@@ -327,6 +333,8 @@ impl SessionV1 {
             requests: Vec::new(),
             connections: Vec::new(),
             stream_sessions: Vec::new(),
+            h2_wire: Vec::new(),
+            tls_hellos: Vec::new(),
             warnings: Vec::new(),
         }
     }

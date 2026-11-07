@@ -10,9 +10,10 @@ pub use cookies::{
     parse_set_cookie, CookieField, CookiePairEntry, ParsedSetCookie, SetCookieRecord,
 };
 pub use entities::{
-    Attempt, AttemptOutcome, NetworkState, CdpRef, Connection, HeaderEvidence, HeaderRole, Initiator,
+    Attempt, AttemptOutcome, NetworkState, CdpRef, Connection, H2ConnectionEvidence, H2Field,
+    H2Setting, H2StreamEvidence, H2WindowUpdate, HeaderEvidence, HeaderRole, Initiator,
     LogicalRequest, MatchCandidate, MatchState, NetlogRefs, Protocol, Redirect, RequestLink, Span,
-    StreamSession, TargetKind, TargetProvenance, Timings,
+    StreamSession, TargetKind, TargetProvenance, Timings, TlsHelloEvidence,
 };
 pub use headers::{HeaderEntry, HeaderView, OrderState};
 pub use provenance::{policy, Provenance, Source, Verification};

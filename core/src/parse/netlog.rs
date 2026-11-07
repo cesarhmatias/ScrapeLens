@@ -17,13 +17,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::Deserialize;
 
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
+
 use crate::error::{CoreError, Result};
 use crate::model::{
     policy, Attempt, AttemptOutcome, Body, BrowserInfo, Completeness, Connection, CookieField,
-    HeaderEvidence, HeaderRole, HeaderView, LogicalRequest, NetworkState, OrderState, Protocol,
-    Provenance,
-    Redirect, SessionBundle, SessionMeta, SessionV1, Source, StreamSession, Timings, Verification,
-    Warning,
+    H2ConnectionEvidence, HeaderEvidence, HeaderRole, HeaderView, LogicalRequest, NetworkState,
+    OrderState, Protocol, Provenance, Redirect, SessionBundle, SessionMeta, SessionV1, Source,
+    StreamSession, Timings, TlsHelloEvidence, Verification, Warning,
 };
 use crate::parse::own::JsonShape;
 use crate::parse::{ImportReport, ImportedSession, InputFormat};
@@ -78,6 +80,9 @@ pub struct NetlogCapture {
     pub requests: Vec<NetlogUrlRequest>,
     pub warnings: Vec<Warning>,
     pub unlinked_session_events: usize,
+    pub h2_wire: Vec<H2ConnectionEvidence>,
+    pub tls_hellos: Vec<TlsHelloEvidence>,
+    pub session_socket: BTreeMap<u32, u32>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -146,6 +151,9 @@ pub struct NetlogHeaderEvent {
     pub time: Option<f64>,
     pub source_id: Option<u32>,
     pub stream_id: Option<u32>,
+    /// Socket source that carries the h2/h3 session (`HTTP2_SESSION_INITIALIZED`
+    /// links the session source to it); `None` on transaction events.
+    pub connection_source_id: Option<u32>,
     pub dependency_id: Option<u32>,
     pub protocol: Protocol,
     pub role: HeaderRole,
@@ -720,6 +728,8 @@ struct RawParams {
     request_type: Option<String>,
     net_error: Option<i64>,
     byte_count: Option<i64>,
+    bytes: Option<String>,
+    handshake_type: Option<i64>,
     location: Option<String>,
     line: Option<String>,
     headers: HeadersOpt,
@@ -752,6 +762,10 @@ impl<'de> Visitor<'de> for ParamsVisitor {
                 }
                 "byte_count" => {
                     params.byte_count = map.next_value::<JsonNum>()?.as_i64();
+                }
+                "bytes" => params.bytes = map.next_value::<LooseStr>()?.0,
+                "type" => {
+                    params.handshake_type = map.next_value::<JsonNum>()?.as_i64();
                 }
                 "location" => params.location = map.next_value::<LooseStr>()?.0,
                 "line" => params.line = map.next_value::<LooseStr>()?.0,
@@ -1505,6 +1519,10 @@ struct BuildCtx {
     index: usize,
     saw_events: bool,
     warnings: Vec<Warning>,
+    ssl_sent: BTreeMap<u32, Vec<u8>>,
+    ssl_received: BTreeMap<u32, Vec<u8>>,
+    client_hellos: Vec<(u32, Vec<u8>)>,
+    session_socket: BTreeMap<u32, u32>,
 }
 
 struct BuiltEvents {
@@ -1513,6 +1531,10 @@ struct BuiltEvents {
     cancelled_seen: BTreeMap<u32, Option<f64>>,
     pending_session: Vec<(NetlogHeaderEvent, Option<u32>)>,
     events_used: usize,
+    ssl_sent: BTreeMap<u32, Vec<u8>>,
+    ssl_received: BTreeMap<u32, Vec<u8>>,
+    client_hellos: Vec<(u32, Vec<u8>)>,
+    session_socket: BTreeMap<u32, u32>,
 }
 
 impl BuildCtx {
@@ -1525,6 +1547,10 @@ impl BuildCtx {
         self.events_used = 0;
         self.index = 0;
         self.warnings.clear();
+        self.ssl_sent.clear();
+        self.ssl_received.clear();
+        self.client_hellos.clear();
+        self.session_socket.clear();
     }
 
     fn process(&mut self, index: usize, event: RawEventObject) {
@@ -1539,10 +1565,7 @@ impl BuildCtx {
         let source_id = event.source_id;
         // Transmission evidence: a transaction send, a stream bound to the request, or
         // a positive byte counter. Proxy tunnel events (CONNECT) are not the request.
-        let sent_bytes = event
-            .params
-            .as_ref()
-            .and_then(|params| params.byte_count);
+        let sent_bytes = event.params.as_ref().and_then(|params| params.byte_count);
         let is_send_event = name.contains("SEND")
             || name.contains("BOUND_TO")
             || (name.contains("BYTES_SENT") && sent_bytes.is_some_and(|count| count > 0));
@@ -1558,6 +1581,70 @@ impl BuildCtx {
             .and_then(JsonNum::as_f64)
             .map(|ticks| ticks_to_epoch_seconds(ticks, self.tick_offset_ms, self.time_unit));
         let phase = event.phase.unwrap_or(0);
+
+        match name.as_str() {
+            "SSL_SOCKET_BYTES_SENT" | "SSL_SOCKET_BYTES_RECEIVED" => {
+                let (Some(source_id), Some(encoded)) = (
+                    source_id,
+                    event
+                        .params
+                        .as_ref()
+                        .and_then(|params| params.bytes.as_deref()),
+                ) else {
+                    return;
+                };
+                let Ok(bytes) = BASE64.decode(encoded) else {
+                    self.warnings.push(Warning::new(
+                        "netlog.ssl_bytes_invalid",
+                        format!("{name} on source {source_id} is not valid base64; skipped"),
+                    ));
+                    return;
+                };
+                let target = if name == "SSL_SOCKET_BYTES_SENT" {
+                    &mut self.ssl_sent
+                } else {
+                    &mut self.ssl_received
+                };
+                let buffer = target.entry(source_id).or_default();
+                if buffer.len() + bytes.len() <= 16 * 1024 * 1024 {
+                    buffer.extend_from_slice(&bytes);
+                }
+            }
+            "SSL_HANDSHAKE_MESSAGE_SENT" => {
+                if event
+                    .params
+                    .as_ref()
+                    .and_then(|params| params.handshake_type)
+                    != Some(1)
+                {
+                    return;
+                }
+                let (Some(source_id), Some(encoded)) = (
+                    source_id,
+                    event
+                        .params
+                        .as_ref()
+                        .and_then(|params| params.bytes.as_deref()),
+                ) else {
+                    return;
+                };
+                if let Ok(bytes) = BASE64.decode(encoded) {
+                    self.client_hellos.push((source_id, bytes));
+                }
+            }
+            "HTTP2_SESSION_INITIALIZED" => {
+                if let (Some(session_id), Some(socket_id)) = (
+                    source_id,
+                    event
+                        .params
+                        .as_ref()
+                        .and_then(|params| params.source_dependency_id),
+                ) {
+                    self.session_socket.insert(session_id, socket_id);
+                }
+            }
+            _ => {}
+        }
 
         match name.as_str() {
             "URL_REQUEST_START_JOB" => {
@@ -1649,6 +1736,16 @@ impl BuildCtx {
                     let protocol = protocol_for_event(&name);
                     let dependency_id = event.dependency_id();
                     let stream_id = event.params.as_ref().and_then(stream_id_of);
+                    let connection_source_id = if name.contains("SESSION") {
+                        Some(
+                            self.session_socket
+                                .get(&source_id)
+                                .copied()
+                                .unwrap_or(source_id),
+                        )
+                    } else {
+                        None
+                    };
                     let (view, nul_expanded, issues) = match parse_headers(
                         event.params,
                         &name,
@@ -1683,6 +1780,7 @@ impl BuildCtx {
                         time,
                         source_id: Some(source_id),
                         stream_id,
+                        connection_source_id,
                         dependency_id,
                         protocol,
                         role,
@@ -1895,6 +1993,10 @@ fn build_events(
         index: 0,
         saw_events: false,
         warnings: Vec::new(),
+        ssl_sent: BTreeMap::new(),
+        ssl_received: BTreeMap::new(),
+        client_hellos: Vec::new(),
+        session_socket: BTreeMap::new(),
     };
     let mut deserializer = serde_json::Deserializer::from_slice(json);
     BuildRoot { ctx: &mut ctx }
@@ -1910,6 +2012,10 @@ fn build_events(
         cancelled_seen: ctx.cancelled_seen,
         pending_session: ctx.pending_session,
         events_used: ctx.events_used,
+        ssl_sent: ctx.ssl_sent,
+        ssl_received: ctx.ssl_received,
+        client_hellos: ctx.client_hellos,
+        session_socket: ctx.session_socket,
     })
 }
 
@@ -2030,6 +2136,10 @@ pub fn parse_netlog_with_wall_clock(
     let mut pending_session = built.pending_session;
     let send_seen = built.send_seen;
     let cancelled_seen = built.cancelled_seen;
+    let ssl_sent = built.ssl_sent;
+    let ssl_received = built.ssl_received;
+    let client_hellos = built.client_hellos;
+    capture.session_socket = built.session_socket;
 
     // Links session events to URL_REQUEST through the explicit chain
     // HTTP_STREAM_JOB_BOUND_TO_REQUEST.
@@ -2096,7 +2206,10 @@ pub fn parse_netlog_with_wall_clock(
 
     for (_, mut builder) in builders {
         builder.saw_send = send_seen.contains(&builder.source_id);
-        builder.cancelled_at = match (builder.is_url_request, cancelled_seen.get(&builder.source_id)) {
+        builder.cancelled_at = match (
+            builder.is_url_request,
+            cancelled_seen.get(&builder.source_id),
+        ) {
             (true, Some(time)) => *time,
             _ => None,
         };
@@ -2126,6 +2239,10 @@ pub fn parse_netlog_with_wall_clock(
             "NetLog produced no usable request",
         ));
     }
+    let (h2_wire, mut h2_warnings) = crate::parse::h2::decode_h2(&ssl_sent, &ssl_received);
+    capture.h2_wire = h2_wire;
+    capture.warnings.append(&mut h2_warnings);
+    capture.tls_hellos = crate::parse::h2::decode_client_hellos(&client_hellos);
     Ok(capture)
 }
 
@@ -2685,7 +2802,9 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
         headless: None,
         browser_binary: None,
         chrome_args: None,
-        notes: Some("imported without CDP; association between sources was not attempted".to_string()),
+        notes: Some(
+            "imported without CDP; association between sources was not attempted".to_string(),
+        ),
         proxy: None,
     });
     meta.labels.push("netlog-import".to_string());
@@ -2715,7 +2834,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
             Verification::Partial,
         )
         .with_source_id(request.source_id.to_string())
-          .with_note("request read only from the NetLog");
+        .with_note("request read only from the NetLog");
         if let Some(version) = &capture.browser.version {
             logical.provenance = logical.provenance.clone().with_browser_version(version);
         }
@@ -2776,7 +2895,8 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                 if attempt.cookie.wire_lines.is_empty() && !attempt.cookie.raw.is_empty() {
                     attempt.cookie.wire_lines = attempt.cookie.raw.clone();
                     attempt.cookie.notes.push(
-                        "h1: a single Cookie field observed in the transactional source".to_string(),
+                        "h1: a single Cookie field observed in the transactional source"
+                            .to_string(),
                     );
                 }
             }
@@ -2809,6 +2929,11 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                     let header_id = format!("{attempt_id}-h{}", attempt.header_evidence.len() + 1);
                     if let Some(stream_id) = evidence.stream_id {
                         attempt.netlog.stream_ids.push(stream_id);
+                        if evidence.event_name.contains("SESSION") {
+                            if let Some(socket) = evidence.connection_source_id {
+                                attempt.netlog.connection_source_ids.push(socket);
+                            }
+                        }
                     }
                     if let Some(dependency_id) = evidence.dependency_id {
                         attempt.netlog.dependency_ids.push(dependency_id);
@@ -2864,7 +2989,8 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
             // Connection: derived from the URL; NetLog does not provide a stable id here.
             let connection_key = connection_key(&parsed.url, parsed.protocol);
             // Not-sent attempts never opened a connection: nothing is derived for them.
-            if let Some((host, port)) = host_port(&parsed.url).filter(|_| parsed.not_sent.is_none()) {
+            if let Some((host, port)) = host_port(&parsed.url).filter(|_| parsed.not_sent.is_none())
+            {
                 let connection_id = connections
                     .entry(connection_key.clone())
                     .or_insert_with(|| {
@@ -2887,7 +3013,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                                 "derived:url",
                                 Verification::Partial,
                             )
-                              .with_note("connection derived from the URL; not the stream job id"),
+                            .with_note("connection derived from the URL; not the stream job id"),
                         });
                         id
                     })
@@ -2932,7 +3058,10 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
             logical.attempts.push(attempt);
         }
         if !logical.attempts.is_empty()
-            && logical.attempts.iter().all(|attempt| attempt.network_state == Some(NetworkState::NotSent))
+            && logical
+                .attempts
+                .iter()
+                .all(|attempt| attempt.network_state == Some(NetworkState::NotSent))
         {
             logical.network_state = Some(NetworkState::NotSent);
         }
@@ -3006,7 +3135,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
                 entry
                     .provenance
                     .notes
-                      .push("transactional event in h1".to_string());
+                    .push("transactional event in h1".to_string());
             }
         }
         session.requests.push(logical);
@@ -3021,6 +3150,7 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
             session.add_warning(warning.clone());
         }
     }
+    attach_wire_evidence(&mut session, capture);
     session.session.completeness.counts.source_events = report.source_events;
     session.session.completeness.counts.source_events_used = report.source_events_used;
     session.session.completeness.counts.source_events_unknown = report.source_events_unknown;
@@ -3036,6 +3166,42 @@ pub fn build_netlog_session(capture: &NetlogCapture) -> (SessionV1, ImportReport
     }
     report.attachments_missing = 0;
     (session, report)
+}
+
+/// Copies the wire evidence decoded from the NetLog into a session (NetLog-only
+/// or CDP+NetLog) and links each h2 stream to the request that carries its
+/// stream id on the same socket source.
+pub fn attach_wire_evidence(session: &mut SessionV1, capture: &NetlogCapture) {
+    session.h2_wire = capture.h2_wire.clone();
+    session.tls_hellos = capture.tls_hellos.clone();
+    let mut stream_requests: BTreeMap<(u32, u32), String> = BTreeMap::new();
+    for request in &session.requests {
+        for attempt in &request.attempts {
+            for source_id in &attempt.netlog.connection_source_ids {
+                for stream_id in &attempt.netlog.stream_ids {
+                    stream_requests
+                        .entry((*source_id, *stream_id))
+                        .or_insert_with(|| request.id.clone());
+                }
+            }
+        }
+    }
+    for connection in &mut session.h2_wire {
+        for stream in &mut connection.streams {
+            stream.request_id = stream_requests
+                .get(&(connection.source_id, stream.stream_id))
+                .cloned();
+        }
+    }
+    if session.h2_wire.is_empty() {
+        // No plaintext h2 evidence: the extra socket ids are not needed and would
+        // change sessions that only carry the session events.
+        for request in &mut session.requests {
+            for attempt in &mut request.attempts {
+                attempt.netlog.connection_source_ids.clear();
+            }
+        }
+    }
 }
 
 /// Importa NetLog isolado.

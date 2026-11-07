@@ -251,6 +251,9 @@ pub struct NetlogRefs {
     pub source_ids: Vec<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stream_ids: Vec<u32>,
+    /// NetLog session/socket source IDs that carried the h2/h3 stream.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub connection_source_ids: Vec<u32>,
     /// Relevant `source_dependency` IDs.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependency_ids: Vec<u32>,
@@ -258,7 +261,10 @@ pub struct NetlogRefs {
 
 impl NetlogRefs {
     pub fn is_empty(&self) -> bool {
-        self.source_ids.is_empty() && self.stream_ids.is_empty() && self.dependency_ids.is_empty()
+        self.source_ids.is_empty()
+            && self.stream_ids.is_empty()
+            && self.connection_source_ids.is_empty()
+            && self.dependency_ids.is_empty()
     }
 }
 
@@ -464,6 +470,89 @@ pub struct StreamSession {
     pub attempt_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub netlog_session_id: Option<u32>,
+    #[serde(default)]
+    pub provenance: Provenance,
+}
+
+/// One header field decoded from the plaintext bytes Chrome handed to TLS.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct H2Field {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct H2StreamEvidence {
+    pub stream_id: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub request: Vec<H2Field>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub response: Vec<H2Field>,
+    #[serde(default)]
+    pub request_end_stream: bool,
+    #[serde(default)]
+    pub response_end_stream: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct H2Setting {
+    pub id: u16,
+    pub value: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct H2WindowUpdate {
+    pub stream_id: u32,
+    pub increment: u32,
+}
+
+/// HTTP/2 frames decoded from `SSL_SOCKET_BYTES_SENT`/`RECEIVED`: settings,
+/// window updates and the real HPACK header order per stream.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct H2ConnectionEvidence {
+    pub source_id: u32,
+    #[serde(default)]
+    pub preface: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub settings: Vec<H2Setting>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub window_updates: Vec<H2WindowUpdate>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub streams: Vec<H2StreamEvidence>,
+    #[serde(default)]
+    pub provenance: Provenance,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+/// ClientHello fields and JA4 computed from `SSL_HANDSHAKE_MESSAGE_SENT`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TlsHelloEvidence {
+    pub source_id: u32,
+    pub version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sni: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alpn: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cipher_suites: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<u16>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub supported_versions: Vec<u16>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub signature_algorithms: Vec<u16>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<u16>,
+    pub ja4: String,
     #[serde(default)]
     pub provenance: Provenance,
 }

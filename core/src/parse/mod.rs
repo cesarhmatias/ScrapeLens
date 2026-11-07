@@ -5,6 +5,7 @@
 
 pub mod cdp;
 pub mod cdp_bodies;
+pub mod h2;
 pub mod har;
 pub mod netlog;
 pub mod own;
@@ -207,6 +208,7 @@ pub fn import_capture_labeled(
         crate::model::backfill_browser_version(&mut session, &version);
     }
     let outcome = crate::correlate::attach_netlog(&mut session, &netlog, &options);
+    netlog::attach_wire_evidence(&mut session, &netlog);
     cdp_report.merge(netlog_report);
     let mut attachments = std::collections::BTreeMap::new();
     match cdp_bodies_jsonl {
