@@ -174,6 +174,11 @@ impl Pending {
     }
 }
 
+/// The part of the window that the generation wait leaves to the direct look. Without it, a
+/// wait that runs to the window leaves the direct look nothing to read with.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+const DIRECT_RESERVE: Duration = Duration::from_secs(1);
+
 /// How often a waiting connection looks at its cancel flag. Short enough that a cancelled waiter
 /// is refused within a few milliseconds, long enough that a waiter does not spin.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -318,7 +323,7 @@ fn in_tree(
     let window = Instant::now() + CHECK_WINDOW;
     // The generation wait runs to the window. A scan serves every connection that waits for it,
     // so a flood costs one scan per generation instead of one direct look per connection.
-    let deadline = window;
+    let deadline = window.checked_sub(DIRECT_RESERVE).unwrap_or(window);
     let mut last = UNCONFIRMED;
     for _ in 0..GENERATIONS {
         if cancel.load(Ordering::SeqCst) {
@@ -873,23 +878,42 @@ mod macos {
         if incomplete { Err(()) } else { Ok(None) }
     }
 
-    fn all_pids() -> Result<Vec<u32>, ()> {
+    /// The return of a libproc call that fails with -1 or with zero and errno set. errno is cleared
+    /// first, so a zero with errno clear is an answer (an empty list), not a failure.
+    /// `Err` carries the errno of the failure.
+    fn libproc_return(call: impl FnOnce() -> i32) -> Result<i32, i32> {
+        // SAFETY: `__error` returns this thread's errno location, which is valid to write.
+        unsafe {
+            *libc::__error() = 0;
+        }
+        let got = call();
+        let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+        if got < 0 || (got == 0 && errno != 0) {
+            return Err(if errno != 0 { errno } else { libc::EIO });
+        }
+        Ok(got)
+    }
+
+    pub(super) fn all_pids() -> Result<Vec<u32>, ()> {
         let mut cap = 256usize;
         for _ in 0..6 {
             let mut buf = vec![0i32; cap];
-            // SAFETY: `buf` is writable for `buf.len() * 4` bytes. The call only fills that buffer.
-            let got = unsafe {
-                proc_listallpids(buf.as_mut_ptr().cast::<c_void>(), (buf.len() * 4) as i32)
-            };
-            if got < 0 {
+            // proc_listallpids returns the number of pids it wrote, not a byte count. A full
+            // buffer may hide more processes, so the buffer grows and the list is read again.
+            let count = libproc_return(|| {
+                // SAFETY: `buf` is writable for `buf.len() * 4` bytes. The call only fills that buffer.
+                unsafe { proc_listallpids(buf.as_mut_ptr().cast::<c_void>(), (buf.len() * 4) as i32) }
+            })
+            .map_err(|_| ())?;
+            // Zero processes is not an answer: launchd always runs, so an empty list is a failed read.
+            if count == 0 {
                 return Err(());
             }
-            let bytes = got as usize;
-            if bytes >= buf.len() * 4 {
+            let count = count as usize;
+            if count >= buf.len() {
                 cap = cap.saturating_mul(2);
                 continue;
             }
-            let count = bytes / 4;
             return Ok(buf
                 .into_iter()
                 .take(count)
@@ -914,15 +938,33 @@ mod macos {
 
     /// The TCP and generic Internet sockets of `pid`, as canonical (local, remote) pairs.
     fn socket_tuples(pid: u32, window: Option<Instant>) -> Result<HashSet<Tuple>, ()> {
-        let mut list = vec![0u8; 4096 * 8];
-        // SAFETY: `list` is writable for its length. The kernel writes at most that many bytes.
-        let got = unsafe {
-            proc_pidinfo(pid as i32, PROC_PIDLISTFDS, 0, list.as_mut_ptr().cast::<c_void>(), list.len() as i32)
+        // A process with more descriptors than the buffer holds is read again with a larger one:
+        // a full buffer may hide the rest, and a short list would miss the connection it holds.
+        let mut capacity = 4096usize * 8;
+        let (list, got) = loop {
+            let mut list = vec![0u8; capacity];
+            let got = match libproc_return(|| {
+                // SAFETY: `list` is writable for its length. The kernel writes at most that many bytes.
+                unsafe { proc_pidinfo(pid as i32, PROC_PIDLISTFDS, 0, list.as_mut_ptr().cast::<c_void>(), list.len() as i32) }
+            }) {
+                Ok(got) => got as usize,
+                // Another user's process cannot be read, and it is not the owner's descendant: it
+                // adds nothing the owner tree or the post-miss holder check could admit. A process
+                // that exited after the listing holds no socket. Neither is a failed scan. Any other
+                // error still fails the scan.
+                Err(libc::EPERM | libc::ESRCH) => return Ok(HashSet::new()),
+                Err(_) => return Err(()),
+            };
+            if got >= list.len() {
+                capacity = capacity.checked_mul(2).filter(|next| *next <= 1 << 22).ok_or(())?;
+                continue;
+            }
+            break (list, got);
         };
-        if got < 0 || got as usize >= list.len() || got as usize % 8 != 0 {
+        if got % 8 != 0 {
             return Err(());
         }
-        let fds = got as usize / 8;
+        let fds = got / 8;
         let mut tuples = HashSet::new();
         for index in 0..fds {
             if window.is_some_and(|until| Instant::now() >= until) {
@@ -954,18 +996,25 @@ mod macos {
     /// not TCP or Internet, or that vanished since the list was read.
     fn socket_tuple(pid: u32, fd: i32) -> Result<Option<Tuple>, ()> {
         let mut info = vec![0u8; SOCKET_FDINFO_SIZE];
-        // SAFETY: `info` is exactly `sizeof(struct socket_fdinfo)` and is writable.
-        let got = unsafe {
-            proc_pidfdinfo(
-                pid as i32,
-                fd,
-                PROC_PIDFDSOCKETINFO,
-                info.as_mut_ptr().cast::<c_void>(),
-                info.len() as i32,
-            )
+        let got = match libproc_return(|| {
+            // SAFETY: `info` is exactly `sizeof(struct socket_fdinfo)` and is writable.
+            unsafe {
+                proc_pidfdinfo(
+                    pid as i32,
+                    fd,
+                    PROC_PIDFDSOCKETINFO,
+                    info.as_mut_ptr().cast::<c_void>(),
+                    info.len() as i32,
+                )
+            }
+        }) {
+            Ok(got) => got,
+            // The descriptor or its process can vanish between the list and this call. Then it
+            // holds no socket any more, which is not a failed scan.
+            Err(libc::ENOENT | libc::EBADF | libc::ESRCH) => return Ok(None),
+            Err(_) => return Err(()),
         };
         if got == 0 {
-            // The descriptor can vanish between the list and this call.
             return Ok(None);
         }
         if got < SOCKET_FDINFO_SIZE as i32 {
@@ -1028,6 +1077,16 @@ mod macos {
         }
         Ok(u32::from_le_bytes(info[OFF_PPID..OFF_PPID + 4].try_into().unwrap()))
     }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+#[test]
+fn the_process_list_is_every_process_not_the_newest_64() {
+    // proc_listallpids returns a count. The reader that treated it as bytes saw only the newest 64
+    // processes, so a real owner that was not among them could never be found.
+    let pids = macos::all_pids().expect("the process list reads");
+    assert!(pids.contains(&std::process::id()), "this process is listed");
+    assert!(pids.len() > 64, "only {} processes listed", pids.len());
 }
 
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
