@@ -1,4 +1,6 @@
-use std::fs::{self, File, OpenOptions};
+#[cfg(not(unix))]
+use std::fs::OpenOptions;
+use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
@@ -36,13 +38,6 @@ pub fn validate_attachment_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
-fn set_mode(path: &Path, mode: u32) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(mode))
-        .map_err(|error| CoreError::io(path, error))
-}
-
 #[cfg(not(unix))]
 fn set_mode(_path: &Path, _mode: u32) -> Result<()> {
     Ok(())
@@ -56,7 +51,7 @@ fn set_mode(_path: &Path, _mode: u32) -> Result<()> {
 /// parent) and is refused. Symlink permissions are not meaningful on Linux, so
 /// the writability rule is applied to the containing directory.
 #[cfg(unix)]
-fn trusted_system_link(link_uid: u32, parent_uid: u32, parent_mode: u32) -> bool {
+fn trusted_system_link(link_uid: u32, parent_uid: u32, parent_mode: u64) -> bool {
     link_uid == 0 && parent_uid == 0 && parent_mode & 0o022 == 0
 }
 
@@ -69,7 +64,7 @@ pub fn is_trusted_symlink_ancestor(path: &Path) -> bool {
     let (Ok(link), Ok(parent_meta)) = (fs::symlink_metadata(path), fs::metadata(parent)) else {
         return false;
     };
-    trusted_system_link(link.uid(), parent_meta.uid(), parent_meta.mode())
+    trusted_system_link(link.uid(), parent_meta.uid(), u64::from(parent_meta.mode()))
 }
 
 #[cfg(not(unix))]
@@ -91,161 +86,202 @@ pub fn first_symlink_ancestor(path: &Path) -> Option<PathBuf> {
 
 /// Creates (if needed) the session directory with permission 0700.
 ///
-/// The whole chain is checked component by component before a component is
-/// created: a symlink ancestor not owned by root (except a trusted system
-/// link), `..`, a file or a foreign-owned destination is refused before any
-/// chmod or write. Missing components are created with mode 0700 from the
-/// start, one at a time, and each one is inspected again right after creation.
+/// The whole chain is walked through directory descriptors opened with `O_NOFOLLOW`:
+/// a symlink ancestor not owned by root (except a trusted system link), `..`, a
+/// file or a foreign-owned destination is refused before any chmod or write.
+/// Missing components are created with `mkdirat` (mode 0700) relative to the
+/// parent descriptor, and the destination is opened, checked and chmodded
+/// through its own descriptor. Nothing is resolved from the path again, so a
+/// name swapped for a symlink after a check can only make the call fail, never
+/// redirect a mkdir or a chmod to another directory.
+#[cfg(unix)]
 pub fn ensure_private_dir(path: &Path) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-
-        let mut current = PathBuf::new();
-        for component in path.components() {
-            match component {
-                Component::Prefix(_) => {
-                    return Err(CoreError::LimitExceeded {
-                        message: format!("{} has an unsupported prefix; refused", path.display()),
-                    });
-                }
-                Component::RootDir => {
-                    current.push(Path::new("/"));
-                    continue;
-                }
-                Component::CurDir => continue,
-                Component::ParentDir => {
-                    return Err(CoreError::LimitExceeded {
-                        message: format!("{} contains '..'; refused", path.display()),
-                    });
-                }
-                Component::Normal(part) => current.push(part),
-            }
-            match fs::symlink_metadata(&current) {
-                Ok(meta) => {
-                    if meta.file_type().is_symlink() {
-                        if is_trusted_symlink_ancestor(&current) {
-                            continue;
-                        }
-                        return Err(CoreError::LimitExceeded {
-                            message: format!(
-                                "{} is a symbolic link; refused (ancestor of the destination); indicate a real folder for the session",
-                                current.display()
-                            ),
-                        });
-                    }
-                    if !meta.is_dir() {
-                        return Err(CoreError::LimitExceeded {
-                            message: format!(
-                                "{} exists and is not a directory; refused",
-                                current.display()
-                            ),
-                        });
-                    }
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    // Another thread may create the same component between the
-                    // lstat and create. On EEXIST, inspect the component again
-                    // with the same rules; a symlink planted in the window is
-                    // still refused, and a directory created by the peer is
-                    // accepted only after that re-check.
-                    let mut ready = false;
-                    for _ in 0..8 {
-                        if component_ready(&current)? {
-                            ready = true;
-                            break;
-                        }
-                        match fs::DirBuilder::new()
-                            .recursive(false)
-                            .mode(0o700)
-                            .create(&current)
-                        {
-                            Ok(()) => continue,
-                            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                                continue;
-                            }
-                            Err(error) => return Err(CoreError::io(&current, error)),
-                        }
-                    }
-                    if !ready || !component_ready(&current)? {
-                        return Err(CoreError::LimitExceeded {
-                            message: format!(
-                                "{} changed repeatedly while it was being created; refused",
-                                current.display()
-                            ),
-                        });
-                    }
-                }
-                Err(error) => return Err(CoreError::io(&current, error)),
-            }
-        }
-        set_private_mode(path)?;
-    }
-    #[cfg(not(unix))]
-    {
-        if !path.exists() {
-            fs::create_dir_all(path).map_err(|error| CoreError::io(path, error))?;
-        }
-        set_mode(path, 0o700)?;
-    }
-    Ok(())
+    open_private_dir(path).map(|_| ())
 }
 
-/// Same rules as a component of `ensure_private_dir`: a missing component is
-/// false, an accepted symlink or a real directory is true.
+#[cfg(not(unix))]
+pub fn ensure_private_dir(path: &Path) -> Result<()> {
+    if !path.exists() {
+        fs::create_dir_all(path).map_err(|error| CoreError::io(path, error))?;
+    }
+    set_mode(path, 0o700)
+}
+
+/// Opens (creating missing components) the private destination and returns the
+/// descriptor of the FINAL directory. Every later operation must be relative to it.
 #[cfg(unix)]
-fn component_ready(path: &Path) -> Result<bool> {
-    match fs::symlink_metadata(path) {
-        Ok(meta) if meta.file_type().is_symlink() => {
-            if is_trusted_symlink_ancestor(path) {
-                Ok(true)
-            } else {
-                Err(CoreError::LimitExceeded {
-                    message: format!(
-                        "{} is a symbolic link; refused (ancestor of the destination); indicate a real folder for the session",
-                        path.display()
-                    ),
-                })
+fn open_private_dir(path: &Path) -> Result<File> {
+    use rustix::fs::{Mode, OFlags};
+
+    if path.as_os_str().is_empty() {
+        return Err(CoreError::LimitExceeded {
+            message: "empty destination path; refused".to_string(),
+        });
+    }
+    let absolute = path.is_absolute();
+    let mut components = path.components();
+    let mut current = if absolute {
+        // Consume `RootDir`; the descriptor starts at the filesystem root.
+        components.next();
+        PathBuf::from("/")
+    } else {
+        PathBuf::new()
+    };
+    let root_flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+    let mut dir: File =
+        rustix::fs::open(if absolute { "/" } else { "." }, root_flags, Mode::empty())
+            .map(File::from)
+            .map_err(|error| CoreError::io(path, errno_io(error)))?;
+    let mut remaining = components.peekable();
+    while let Some(component) = remaining.next() {
+        let is_final = remaining.peek().is_none();
+        let part = match component {
+            Component::RootDir | Component::CurDir => continue,
+            Component::ParentDir => {
+                return Err(CoreError::LimitExceeded {
+                    message: format!("{} contains '..'; refused", path.display()),
+                });
             }
+            Component::Prefix(_) => {
+                return Err(CoreError::LimitExceeded {
+                    message: format!("{} has an unsupported prefix; refused", path.display()),
+                });
+            }
+            Component::Normal(part) => part,
+        };
+        current.push(part);
+        dir = enter_private_component(&dir, part, &current, !is_final)?;
+    }
+    verify_private_fd(&dir, path)?;
+    Ok(dir)
+}
+
+/// One component of the walk: a real directory is opened without following its
+/// final link; a missing one is created with `mkdirat` and reopened; only a
+/// trusted system symlink in an ANCESTOR position is followed. Errors carry the
+/// full path for the caller.
+#[cfg(unix)]
+fn enter_private_component(
+    dir: &File,
+    part: &std::ffi::OsStr,
+    current: &Path,
+    allow_system_link: bool,
+) -> Result<File> {
+    use rustix::fs::{AtFlags, FileType, Mode};
+
+    match rustix::fs::statat(dir, part, AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(stat) => {
+            let kind = FileType::from_raw_mode(stat.st_mode as _);
+            if kind == FileType::Symlink {
+                let parent = rustix::fs::fstat(dir)
+                    .map_err(|error| CoreError::io(current, errno_io(error)))?;
+                if allow_system_link
+                    && trusted_system_link(stat.st_uid, parent.st_uid, u64::from(parent.st_mode))
+                {
+                    return open_component(dir, part, current, true);
+                }
+                return Err(symlink_refused(current));
+            }
+            if !kind.is_dir() {
+                return Err(not_a_directory(current));
+            }
+            open_component(dir, part, current, false)
         }
-        Ok(meta) if meta.is_dir() => Ok(true),
-        Ok(_) => Err(CoreError::LimitExceeded {
-            message: format!("{} exists and is not a directory; refused", path.display()),
-        }),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(error) => Err(CoreError::io(path, error)),
+        Err(error) if error == rustix::io::Errno::NOENT => {
+            for _ in 0..8 {
+                match rustix::fs::mkdirat(dir, part, Mode::from(0o700)) {
+                    Ok(()) => {}
+                    Err(error) if error == rustix::io::Errno::EXIST => {}
+                    Err(error) => return Err(CoreError::io(current, errno_io(error))),
+                }
+                match open_component(dir, part, current, false) {
+                    Ok(opened) => return Ok(opened),
+                    Err(CoreError::Io { source, .. })
+                        if source.raw_os_error()
+                            == Some(rustix::io::Errno::NOENT.raw_os_error()) =>
+                    {
+                        continue;
+                    }
+                    Err(CoreError::Io { source, .. })
+                        if source.raw_os_error()
+                            == Some(rustix::io::Errno::LOOP.raw_os_error()) =>
+                    {
+                        return Err(symlink_refused(current));
+                    }
+                    Err(CoreError::Io { source, .. })
+                        if source.raw_os_error()
+                            == Some(rustix::io::Errno::NOTDIR.raw_os_error()) =>
+                    {
+                        return Err(not_a_directory(current));
+                    }
+                    Err(other) => return Err(other),
+                }
+            }
+            Err(CoreError::LimitExceeded {
+                message: format!(
+                    "{} changed repeatedly while it was being created; refused",
+                    current.display()
+                ),
+            })
+        }
+        Err(error) => Err(CoreError::io(current, errno_io(error))),
     }
 }
 
-/// Opens the directory and changes its mode through the opened file descriptor.
-/// The path and the opened inode are compared before the chmod, so a path
-/// swapped to a symlink after the check cannot redirect the chmod.
 #[cfg(unix)]
-fn set_private_mode(path: &Path) -> Result<()> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-    let file = File::open(path).map_err(|error| CoreError::io(path, error))?;
-    let meta = fs::symlink_metadata(path).map_err(|error| CoreError::io(path, error))?;
-    if meta.file_type().is_symlink() {
-        return Err(CoreError::LimitExceeded {
-            message: format!("{} is a symbolic link; refused", path.display()),
-        });
+fn open_component(
+    dir: &File,
+    part: &std::ffi::OsStr,
+    current: &Path,
+    follow: bool,
+) -> Result<File> {
+    use rustix::fs::{Mode, OFlags};
+    let mut flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC;
+    if !follow {
+        flags |= OFlags::NOFOLLOW;
     }
-    let opened = file
-        .metadata()
-        .map_err(|error| CoreError::io(path, error))?;
-    if opened.dev() != meta.dev() || opened.ino() != meta.ino() {
-        return Err(CoreError::LimitExceeded {
-            message: format!(
-                "{} changed while it was being opened; refused",
-                path.display()
-            ),
-        });
+    rustix::fs::openat(dir, part, flags, Mode::empty())
+        .map(File::from)
+        .map_err(|error| CoreError::io(current, errno_io(error)))
+}
+
+#[cfg(unix)]
+fn symlink_refused(path: &Path) -> CoreError {
+    CoreError::LimitExceeded {
+        message: format!(
+            "{} is a symbolic link; refused (ancestor of the destination); indicate a real folder for the session",
+            path.display()
+        ),
     }
-    check_private_dir(path, &meta)?;
-    file.set_permissions(fs::Permissions::from_mode(0o700))
-        .map_err(|error| CoreError::io(path, error))?;
-    let after = fs::symlink_metadata(path).map_err(|error| CoreError::io(path, error))?;
-    check_private_dir(path, &after)
+}
+
+#[cfg(unix)]
+fn not_a_directory(path: &Path) -> CoreError {
+    CoreError::LimitExceeded {
+        message: format!("{} exists and is not a directory; refused", path.display()),
+    }
+}
+
+#[cfg(unix)]
+fn errno_io(error: rustix::io::Errno) -> std::io::Error {
+    std::io::Error::from_raw_os_error(error.raw_os_error())
+}
+
+/// Checks through the descriptor that it is a directory of ours, then sets 0700
+/// with `fchmod` on that same descriptor (a swapped name cannot redirect either).
+#[cfg(unix)]
+fn verify_private_fd(dir: &File, path: &Path) -> Result<()> {
+    use rustix::fs::{FileType, Mode};
+
+    let before = rustix::fs::fstat(dir).map_err(|error| CoreError::io(path, errno_io(error)))?;
+    if !FileType::from_raw_mode(before.st_mode as _).is_dir() {
+        return Err(not_a_directory(path));
+    }
+    check_private_owner(path, before.st_uid, effective_uid())?;
+    rustix::fs::fchmod(dir, Mode::from(0o700))
+        .map_err(|error| CoreError::io(path, errno_io(error)))?;
+    let after = rustix::fs::fstat(dir).map_err(|error| CoreError::io(path, errno_io(error)))?;
+    check_private_owner(path, after.st_uid, effective_uid())
 }
 
 #[cfg(unix)]
@@ -253,7 +289,7 @@ fn effective_uid() -> u32 {
     rustix::process::geteuid().as_raw()
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, test))]
 fn check_private_dir(path: &Path, meta: &fs::Metadata) -> Result<()> {
     use std::os::unix::fs::MetadataExt;
     if meta.file_type().is_symlink() {
@@ -282,6 +318,7 @@ fn check_private_owner(path: &Path, owner: u32, expected: u32) -> Result<()> {
     })
 }
 
+#[cfg(not(unix))]
 /// Refuses a symlink (and anything that is not a regular file) at the destination.
 fn refuse_non_regular_destination(path: &Path) -> Result<()> {
     match fs::symlink_metadata(path) {
@@ -298,6 +335,119 @@ fn refuse_non_regular_destination(path: &Path) -> Result<()> {
     }
 }
 
+#[cfg(unix)]
+/// Refuses a symlink or a non-regular entry at the destination name, relative to
+/// the open session directory (never by resolving the full path again).
+fn refuse_destination_at(dir: &File, name: &str, path: &Path) -> Result<()> {
+    use rustix::fs::{AtFlags, FileType};
+    match rustix::fs::statat(dir, name, AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(stat) => {
+            let kind = FileType::from_raw_mode(stat.st_mode as _);
+            if kind == FileType::Symlink {
+                Err(CoreError::LimitExceeded {
+                    message: format!("{} is a symbolic link; refused", path.display()),
+                })
+            } else if !kind.is_file() {
+                Err(CoreError::LimitExceeded {
+                    message: format!(
+                        "{} exists and is not a regular file; refused",
+                        path.display()
+                    ),
+                })
+            } else {
+                Ok(())
+            }
+        }
+        Err(error) if error == rustix::io::Errno::NOENT => Ok(()),
+        Err(error) => Err(CoreError::io(path, errno_io(error))),
+    }
+}
+
+#[cfg(unix)]
+/// Writes `bytes` to `<dir>/<name>` atomically and relative to the descriptor
+/// (A4-B4/A6-B5): a new temporary file with `O_EXCL|O_NOFOLLOW` in the same
+/// directory, then `renameat` over the name. A symlink planted at the name is
+/// replaced as a NAME; its target is never opened for writing. No path is
+/// resolved again after the descriptor was opened.
+fn write_private_at(
+    dir: &File,
+    name: &str,
+    path: &Path,
+    bytes: &[u8],
+    sync_data: bool,
+) -> Result<()> {
+    write_private_at_impl(dir, name, path, bytes, sync_data, true)
+}
+
+/// Same atomic descriptor-relative write, but a symlink or file already at the
+/// name is replaced as a NAME (renameat), never followed. Used by spill files,
+/// where replacing the entry is the documented behaviour.
+#[cfg(unix)]
+fn write_private_replacing_at(
+    dir: &File,
+    name: &str,
+    path: &Path,
+    bytes: &[u8],
+    sync_data: bool,
+) -> Result<()> {
+    write_private_at_impl(dir, name, path, bytes, sync_data, false)
+}
+
+#[cfg(unix)]
+fn write_private_at_impl(
+    dir: &File,
+    name: &str,
+    path: &Path,
+    bytes: &[u8],
+    sync_data: bool,
+    refuse_existing: bool,
+) -> Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use rustix::fs::{Mode, OFlags};
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    validate_attachment_name(name)?;
+    if refuse_existing {
+        refuse_destination_at(dir, name, path)?;
+    }
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = format!(
+        ".{name}.tmp-{}-{nanos}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::SeqCst)
+    );
+    let flags = OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let mut file = rustix::fs::openat(dir, tmp.as_str(), flags, Mode::from(0o600))
+        .map(File::from)
+        .map_err(|error| CoreError::io(path, errno_io(error)))?;
+    let written = file
+        .write_all(bytes)
+        .map_err(|error| CoreError::io(path, error))
+        .and_then(|()| {
+            if sync_data {
+                file.sync_all().map_err(|error| CoreError::io(path, error))
+            } else {
+                file.flush().map_err(|error| CoreError::io(path, error))
+            }
+        });
+    if let Err(error) = written {
+        let _ = rustix::fs::unlinkat(dir, tmp.as_str(), rustix::fs::AtFlags::empty());
+        return Err(error);
+    }
+    rustix::fs::fchmod(&file, Mode::from(0o600))
+        .map_err(|error| CoreError::io(path, errno_io(error)))?;
+    drop(file);
+    rustix::fs::renameat(dir, tmp.as_str(), dir, name).map_err(|error| {
+        let _ = rustix::fs::unlinkat(dir, tmp.as_str(), rustix::fs::AtFlags::empty());
+        CoreError::io(path, errno_io(error))
+    })
+}
+
+#[cfg(not(unix))]
 fn write_atomic(path: &Path, bytes: &[u8], sync_data: bool) -> Result<()> {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -308,10 +458,7 @@ fn write_atomic(path: &Path, bytes: &[u8], sync_data: bool) -> Result<()> {
         .ok_or_else(|| CoreError::InvalidAttachmentPath {
             name: path.to_string_lossy().to_string(),
         })?;
-    // The destination must never be a symlink (the write would leave the directory).
     refuse_non_regular_destination(path)?;
-    // Temporary with an unpredictable name, created with O_EXCL (`create_new`): if the
-    // name exists, even as a symlink, the open fails instead of following the link.
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
@@ -321,14 +468,8 @@ fn write_atomic(path: &Path, bytes: &[u8], sync_data: bool) -> Result<()> {
         std::process::id(),
         COUNTER.fetch_add(1, Ordering::SeqCst)
     ));
-
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
     let mut file = options
         .open(&tmp)
         .map_err(|error| CoreError::io(&tmp, error))?;
@@ -347,9 +488,7 @@ fn write_atomic(path: &Path, bytes: &[u8], sync_data: bool) -> Result<()> {
         let _ = fs::remove_file(&tmp);
         return Err(error);
     }
-
     set_mode(&tmp, 0o600)?;
-    // Check again right before the rename: the destination may have become a symlink.
     if let Err(error) = refuse_non_regular_destination(path) {
         let _ = fs::remove_file(&tmp);
         return Err(error);
@@ -359,12 +498,6 @@ fn write_atomic(path: &Path, bytes: &[u8], sync_data: bool) -> Result<()> {
         CoreError::io(path, error)
     })?;
     Ok(())
-}
-
-#[cfg(unix)]
-fn sync_dir(path: &Path) -> Result<()> {
-    let dir = File::open(path).map_err(|error| CoreError::io(path, error))?;
-    dir.sync_all().map_err(|error| CoreError::io(path, error))
 }
 
 #[cfg(not(unix))]
@@ -402,8 +535,140 @@ fn session_json_bytes(session: &crate::model::SessionV1, threshold: usize) -> Re
     }
 }
 
+/// Opens (creating and chmodding) a private subdirectory of an already-open
+/// private directory, relative to its descriptor. A symlink is always refused
+/// here: the system-symlink exception belongs to the ancestor walk only.
+#[cfg(unix)]
+fn open_private_subdir(parent: &File, name: &str, path: &Path) -> Result<File> {
+    let dir = enter_private_component(parent, std::ffi::OsStr::new(name), path, false)?;
+    verify_private_fd(&dir, path)?;
+    Ok(dir)
+}
+
+/// An open private (0700, ours) directory. Every write through it is relative to
+/// the descriptor taken at [`PrivateDir::open`], so a name swapped for a symlink
+/// later can only make the operation fail, never redirect it outside.
+#[cfg(unix)]
+pub struct PrivateDir {
+    dir: File,
+    path: PathBuf,
+}
+
+#[cfg(unix)]
+impl PrivateDir {
+    /// Opens an existing private directory with the full ancestor walk.
+    pub fn open(path: &Path) -> Result<Self> {
+        Ok(Self {
+            dir: open_private_dir(path)?,
+            path: path.to_path_buf(),
+        })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Writes one private file (0600) atomically, replacing a planted symlink name
+    /// without touching its target.
+    pub fn write(&self, name: &str, bytes: &[u8], sync_data: bool) -> Result<()> {
+        write_private_at(&self.dir, name, &self.path.join(name), bytes, sync_data)
+    }
+
+    /// Like [`PrivateDir::write`], but an entry already at the name (including a
+    /// symlink) is replaced without touching the link target.
+    pub fn write_replacing(&self, name: &str, bytes: &[u8], sync_data: bool) -> Result<()> {
+        write_private_replacing_at(&self.dir, name, &self.path.join(name), bytes, sync_data)
+    }
+
+    /// Copies a regular file into the directory without following links at the
+    /// source or at the destination name.
+    pub fn copy_from(&self, name: &str, source: &Path) -> Result<()> {
+        use rustix::fs::{Mode, OFlags};
+
+        validate_attachment_name(name)?;
+        refuse_destination_at(&self.dir, name, &self.path.join(name))?;
+        let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+        let mut input = rustix::fs::open(source, flags, Mode::empty())
+            .map(File::from)
+            .map_err(|error| CoreError::io(source, errno_io(error)))?;
+        let meta = input
+            .metadata()
+            .map_err(|error| CoreError::io(source, error))?;
+        if !meta.is_file() {
+            return Err(CoreError::LimitExceeded {
+                message: format!("{} is not a regular file; refused", source.display()),
+            });
+        }
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let tmp = format!(".{name}.tmp-{nanos}");
+        let target = self.path.join(name);
+        let create =
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+        let mut output = rustix::fs::openat(&self.dir, tmp.as_str(), create, Mode::from(0o600))
+            .map(File::from)
+            .map_err(|error| CoreError::io(&target, errno_io(error)))?;
+        let copied = std::io::copy(&mut input, &mut output)
+            .and_then(|_| output.sync_all())
+            .map_err(|error| CoreError::io(&target, error));
+        if let Err(error) = copied {
+            let _ = rustix::fs::unlinkat(&self.dir, tmp.as_str(), rustix::fs::AtFlags::empty());
+            return Err(error);
+        }
+        rustix::fs::fchmod(&output, Mode::from(0o600))
+            .map_err(|error| CoreError::io(&target, errno_io(error)))?;
+        drop(output);
+        rustix::fs::renameat(&self.dir, tmp.as_str(), &self.dir, name).map_err(|error| {
+            let _ = rustix::fs::unlinkat(&self.dir, tmp.as_str(), rustix::fs::AtFlags::empty());
+            CoreError::io(&target, errno_io(error))
+        })
+    }
+}
+
+#[cfg(not(unix))]
+pub struct PrivateDir {
+    path: PathBuf,
+}
+
+#[cfg(not(unix))]
+impl PrivateDir {
+    pub fn open(path: &Path) -> Result<Self> {
+        ensure_private_dir(path)?;
+        Ok(Self {
+            path: path.to_path_buf(),
+        })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn write(&self, name: &str, bytes: &[u8], sync_data: bool) -> Result<()> {
+        validate_attachment_name(name)?;
+        write_atomic(&self.path.join(name), bytes, sync_data)
+    }
+
+    pub fn write_replacing(&self, name: &str, bytes: &[u8], sync_data: bool) -> Result<()> {
+        self.write(name, bytes, sync_data)
+    }
+
+    pub fn copy_from(&self, name: &str, source: &Path) -> Result<()> {
+        validate_attachment_name(name)?;
+        let bytes = fs::read(source).map_err(|error| CoreError::io(source, error))?;
+        self.write(name, &bytes, true)
+    }
+}
+
 /// Writes a complete session in the v1 layout with restricted permissions:
 /// directory 0700, `session.json`/attachments 0600, atomic write per file.
+///
+/// The destination is opened once (see [`open_private_dir`]) and every mkdir,
+/// chmod and write from then on is relative to that descriptor (`mkdirat`,
+/// `fchmod`, `openat`, `renameat`). A name swapped for a symlink after the
+/// checks can only make the call fail; it can never redirect `session.json` or
+/// an attachment to another directory.
 ///
 /// Attachments do not get an individual `fsync`: each file is closed and renamed
 /// atomically, and the directory is synchronized once at the end of the batch. In
@@ -412,58 +677,102 @@ fn session_json_bytes(session: &crate::model::SessionV1, threshold: usize) -> Re
 /// run); `session.json` is still synchronized. The batch preserves the order
 /// "artifacts/attachments before the document" so as not to leave a broken reference.
 pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
-    ensure_private_dir(dir)?;
-    // From here on everything is written under the canonicalized directory: no
-    // component of the path may be swapped for a symlink in the middle of the write.
-    let dir = &dir
-        .canonicalize()
-        .map_err(|error| CoreError::io(dir, error))?;
-    let attachments_dir = dir.join(ATTACHMENTS_DIR);
-    // `attachments/` is created by us inside the session: a symlink there is refused
-    // before any mkdir/chmod.
-    if let Ok(meta) = fs::symlink_metadata(&attachments_dir) {
-        if meta.file_type().is_symlink() {
+    #[cfg(unix)]
+    {
+        let session = open_private_dir(dir)?;
+        let attachments_path = dir.join(ATTACHMENTS_DIR);
+        let attachments = open_private_subdir(&session, ATTACHMENTS_DIR, &attachments_path)?;
+
+        // Artifacts/attachments first; session.json last, so that a document never
+        // points to files that do not exist yet.
+        if let Some(bytes) = &bundle.cdp_events_jsonl {
+            write_private_at(
+                &session,
+                CDP_EVENTS_FILE,
+                &dir.join(CDP_EVENTS_FILE),
+                bytes,
+                true,
+            )?;
+        }
+        if let Some(bytes) = &bundle.netlog_json {
+            write_private_at(&session, NETLOG_FILE, &dir.join(NETLOG_FILE), bytes, true)?;
+        }
+
+        // Batch: in small sessions each attachment is durable; in large captures the
+        // fsync is a single one per directory at the end, not one per file.
+        let sync_each = bundle.attachments.len() <= ATTACHMENT_SYNC_LIMIT;
+        for (name, bytes) in &bundle.attachments {
+            write_private_at(
+                &attachments,
+                name,
+                &attachments_path.join(name),
+                bytes,
+                sync_each,
+            )?;
+        }
+        if !bundle.attachments.is_empty() {
+            attachments
+                .sync_all()
+                .map_err(|error| CoreError::io(&attachments_path, error))?;
+        }
+
+        let json = session_document(bundle)?;
+        write_private_at(&session, SESSION_FILE, &dir.join(SESSION_FILE), &json, true)?;
+        session
+            .sync_all()
+            .map_err(|error| CoreError::io(dir, error))?;
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        ensure_private_dir(dir)?;
+        let dir = &dir
+            .canonicalize()
+            .map_err(|error| CoreError::io(dir, error))?;
+        let attachments_dir = dir.join(ATTACHMENTS_DIR);
+        if let Ok(meta) = fs::symlink_metadata(&attachments_dir) {
+            if meta.file_type().is_symlink() {
+                return Err(CoreError::LimitExceeded {
+                    message: format!("{} is a symbolic link; refused", attachments_dir.display()),
+                });
+            }
+        }
+        ensure_private_dir(&attachments_dir)?;
+        let canonical_attachments = attachments_dir
+            .canonicalize()
+            .map_err(|error| CoreError::io(&attachments_dir, error))?;
+        if canonical_attachments.parent() != Some(dir.as_path()) {
             return Err(CoreError::LimitExceeded {
-                message: format!("{} is a symbolic link; refused", attachments_dir.display()),
+                message: format!(
+                    "{} resolves outside the session; refused",
+                    attachments_dir.display()
+                ),
             });
         }
+        if let Some(bytes) = &bundle.cdp_events_jsonl {
+            write_atomic(&dir.join(CDP_EVENTS_FILE), bytes, true)?;
+        }
+        if let Some(bytes) = &bundle.netlog_json {
+            write_atomic(&dir.join(NETLOG_FILE), bytes, true)?;
+        }
+        let sync_each = bundle.attachments.len() <= ATTACHMENT_SYNC_LIMIT;
+        for (name, bytes) in &bundle.attachments {
+            validate_attachment_name(name)?;
+            write_atomic(&attachments_dir.join(name), bytes, sync_each)?;
+        }
+        if !bundle.attachments.is_empty() {
+            sync_dir(&attachments_dir)?;
+        }
+        let json = session_document(bundle)?;
+        write_atomic(&dir.join(SESSION_FILE), &json, true)?;
+        sync_dir(dir)?;
+        Ok(())
     }
-    ensure_private_dir(&attachments_dir)?;
-    let canonical_attachments = attachments_dir
-        .canonicalize()
-        .map_err(|error| CoreError::io(&attachments_dir, error))?;
-    if canonical_attachments.parent() != Some(dir.as_path()) {
-        return Err(CoreError::LimitExceeded {
-            message: format!(
-                "{} resolves outside the session; refused",
-                attachments_dir.display()
-            ),
-        });
-    }
+}
 
-    // Artifacts/attachments first; session.json last, so that a document never
-    // points to files that do not exist yet.
-    if let Some(bytes) = &bundle.cdp_events_jsonl {
-        write_atomic(&dir.join(CDP_EVENTS_FILE), bytes, true)?;
-    }
-    if let Some(bytes) = &bundle.netlog_json {
-        write_atomic(&dir.join(NETLOG_FILE), bytes, true)?;
-    }
-
-    // Batch: in small sessions each attachment is durable; in large captures the
-    // fsync is a single one per directory at the end, not one per file.
-    let sync_each = bundle.attachments.len() <= ATTACHMENT_SYNC_LIMIT;
-    for (name, bytes) in &bundle.attachments {
-        validate_attachment_name(name)?;
-        write_atomic(&attachments_dir.join(name), bytes, sync_each)?;
-    }
-    if !bundle.attachments.is_empty() {
-        sync_dir(&attachments_dir)?;
-    }
-
-    // A proxied capture gets its remote endpoints and notes made explicit before it is
-    // written; direct captures are written as they are.
-    let json = if bundle
+/// The bytes of `session.json`, applying the proxy facts first when needed.
+fn session_document(bundle: &SessionBundle) -> Result<Vec<u8>> {
+    if bundle
         .session
         .session
         .capture
@@ -473,13 +782,10 @@ pub fn write_session_dir(bundle: &SessionBundle, dir: &Path) -> Result<()> {
     {
         let mut session = bundle.session.clone();
         crate::model::apply_proxy_facts(&mut session);
-        session_json_bytes(&session, COMPACT_SESSION_BYTES)?
+        session_json_bytes(&session, COMPACT_SESSION_BYTES)
     } else {
-        session_json_bytes(&bundle.session, COMPACT_SESSION_BYTES)?
-    };
-    write_atomic(&dir.join(SESSION_FILE), &json, true)?;
-    sync_dir(dir)?;
-    Ok(())
+        session_json_bytes(&bundle.session, COMPACT_SESSION_BYTES)
+    }
 }
 
 /// Opens an attachment for reading, refusing symlinks (in the folder and in the
