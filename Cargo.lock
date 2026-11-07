@@ -3487,6 +3487,7 @@ name = "scrapelens"
 version = "0.1.3"
 dependencies = [
  "libc",
+ "rustix",
  "scrapelens-capture",
  "scrapelens-core",
  "scrapelens-mcp",
@@ -3541,6 +3542,7 @@ name = "scrapelens-export-validation"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "rustix",
  "scrapelens-core",
  "serde",
  "serde_json",

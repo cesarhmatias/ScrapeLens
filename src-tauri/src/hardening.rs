@@ -8,6 +8,9 @@
 //! - `PR_SET_DUMPABLE` to zero (Linux): no ptrace attach or `/proc/<pid>/mem` access by other
 //!   processes, which also keeps core dumps off.
 //!
+//! The open-files soft limit is raised as well (review-013b L8): a macOS app started from Finder
+//! inherits launchd's soft limit, 256, which a real browser session exceeds.
+//!
 //! Nothing here stops the start-up: a failed call becomes a message for the log.
 
 /// Applies the limits. Returns the calls that failed, for the log; an empty list means both held.
@@ -34,7 +37,37 @@ pub fn harden_process() -> Vec<String> {
             ));
         }
     }
+    raise_open_files_limit();
     problems
+}
+
+/// Sets the open-files soft limit to the hard limit, up to what macOS and Linux accept for it.
+/// Returns the soft limit in effect afterwards.
+pub fn raise_open_files_limit() -> u64 {
+    #[cfg(target_os = "macos")]
+    const CEILING: u64 = 10_240;
+    #[cfg(not(target_os = "macos"))]
+    const CEILING: u64 = 65_536;
+    let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    // SAFETY: `limit` is a valid rlimit for getrlimit to write into.
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) } != 0 {
+        return 0;
+    }
+    let target = limit.rlim_max.min(CEILING);
+    if target > limit.rlim_cur {
+        let raised = libc::rlimit { rlim_cur: target, rlim_max: limit.rlim_max };
+        // SAFETY: `raised` is a valid rlimit whose soft limit is not above its hard limit.
+        unsafe {
+            libc::setrlimit(libc::RLIMIT_NOFILE, &raised);
+        }
+    }
+    let mut now = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+    // SAFETY: as above.
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut now) } == 0 {
+        now.rlim_cur
+    } else {
+        0
+    }
 }
 
 #[cfg(test)]
@@ -51,6 +84,11 @@ mod tests {
         // SAFETY: `getrlimit` writes into the struct it is given.
         assert_eq!(unsafe { libc::getrlimit(libc::RLIMIT_CORE, &mut limit) }, 0);
         assert_eq!((limit.rlim_cur, limit.rlim_max), (0, 0));
+    }
+
+    #[test]
+    fn the_open_files_limit_is_raised_to_a_usable_value() {
+        assert!(raise_open_files_limit() >= 1024);
     }
 
     #[cfg(target_os = "linux")]

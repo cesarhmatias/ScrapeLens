@@ -3,10 +3,11 @@
 //! chosen by the user and only then deletes the temporary one.
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use scrapelens_core::store;
+
+use crate::fsfd;
 
 /// Size limit for the trace file accepted by validation.
 pub const TRACE_MAX_BYTES: u64 = 64 * 1024 * 1024;
@@ -60,28 +61,12 @@ pub fn discard(root: &Path, dir: &Path) -> Result<(), String> {
     fs::remove_dir_all(&dir_abs).map_err(|error| format!("could not delete {}: {error}", dir_abs.display()))
 }
 
-fn copy_tree(from: &Path, to: &Path) -> Result<(), String> {
-    fs::create_dir(to).map_err(|error| format!("could not create {}: {error}", to.display()))?;
-    fs::set_permissions(to, fs::Permissions::from_mode(0o700)).map_err(|error| error.to_string())?;
-    for entry in fs::read_dir(from).map_err(|error| error.to_string())? {
-        let entry = entry.map_err(|error| error.to_string())?;
-        let (src, dst) = (entry.path(), to.join(entry.file_name()));
-        let meta = fs::symlink_metadata(&src).map_err(|error| error.to_string())?;
-        if meta.file_type().is_symlink() {
-            return Err(format!("{} is a symbolic link; refused", src.display()));
-        }
-        if meta.is_dir() {
-            copy_tree(&src, &dst)?;
-        } else {
-            fs::copy(&src, &dst).map_err(|error| format!("could not copy {}: {error}", src.display()))?;
-            fs::set_permissions(&dst, fs::Permissions::from_mode(0o600)).map_err(|error| error.to_string())?;
-        }
-    }
-    Ok(())
-}
-
 /// Copies the temporary run to `destination` (new folder, outside the root) and deletes the temporary one.
 /// Returns the final path. On error, removes the partial copy and keeps the temporary one.
+///
+/// The destination's parent is opened once, without following links, and the new folder, the copy
+/// and the removal of the temporary run all happen relative to descriptors. A name swapped for a
+/// link while the copy runs makes the copy fail; it cannot send the files somewhere else.
 pub fn keep(root: &Path, dir: &Path, destination: &Path) -> Result<PathBuf, String> {
     let src = inside_root(root, dir)?;
     let name = destination.file_name().ok_or_else(|| format!("destination has no folder name: {}", destination.display()))?;
@@ -95,25 +80,76 @@ pub fn keep(root: &Path, dir: &Path, destination: &Path) -> Result<PathBuf, Stri
             return Err(format!("the chosen folder goes through a symbolic link ({}); choose a real path", ancestor.display()));
         }
     }
-    let parent_abs = fs::canonicalize(parent).map_err(|error| format!("invalid destination folder ({}): {error}", parent.display()))?;
-    let dest = parent_abs.join(name);
+    // Only for the checks below: the copy itself walks the path it was given, never this canonical one.
+    let parent_checked = fs::canonicalize(parent).map_err(|error| format!("invalid destination folder ({}): {error}", parent.display()))?;
     let root_abs = fs::canonicalize(root).map_err(|error| error.to_string())?;
-    if dest.starts_with(&root_abs) {
+    if parent_checked.join(name).starts_with(&root_abs) {
         return Err("the destination is inside the app's temporary folder; choose another folder".to_string());
     }
+    let dest = destination.to_path_buf();
     if fs::symlink_metadata(&dest).is_ok() {
         return Err(format!("the destination already exists ({}); choose a new folder", dest.display()));
     }
-    if let Err(error) = copy_tree(&src, &dest) {
-        let _ = fs::remove_dir_all(&dest);
+
+    // The parent is walked without following links, and the new folder is created inside that
+    // descriptor: a name swapped for a link cannot send the folder (or anything in it) elsewhere.
+    let parent_abs = absolute(parent)?;
+    let parent_fd = fsfd::open_dir_nofollow(&parent_abs)
+        .map_err(|error| format!("invalid destination folder ({}): {error}", parent.display()))?;
+    match fsfd::create_dir_at(&parent_fd, name) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(format!("the destination already exists ({}); choose a new folder", dest.display()));
+        }
+        Err(error) => return Err(format!("could not create {}: {error}", dest.display())),
+    }
+    // The new folder is ours: core opens it as a private directory and copies the run into it
+    // through that descriptor (symlinks and special files refused).
+    let dest_abs = parent_abs.join(name);
+    let copied = store::PrivateDir::open(&dest_abs)
+        .and_then(|private| private.copy_tree_from(&src))
+        .map_err(|error| format!("could not copy the run to {}: {error}", dest.display()));
+    if let Err(error) = copied {
+        remove_partial(&dest_abs, &parent_fd, name);
         return Err(error);
     }
-    fs::remove_dir_all(&src).map_err(|error| format!("run kept in {}, but the temporary one was not deleted: {error}", dest.display()))?;
+
+    let src_name = src.file_name().ok_or_else(|| format!("temporary run has no name: {}", src.display()))?;
+    let root_private = store::PrivateDir::open(&root_abs).map_err(|error| error.to_string())?;
+    let src_name = src_name.to_str().ok_or_else(|| format!("temporary run has no UTF-8 name: {}", src.display()))?;
+    root_private
+        .remove_all(src_name)
+        .map_err(|error| format!("run kept in {}, but the temporary one was not deleted: {error}", dest.display()))?;
     Ok(dest)
+}
+
+/// Removes a folder that `keep` created and then failed to fill: its entries through core's
+/// private descriptor, then the empty folder through the parent's descriptor.
+fn remove_partial(dest: &Path, parent: &std::os::fd::OwnedFd, name: &std::ffi::OsStr) {
+    if let Ok(private) = store::PrivateDir::open(dest) {
+        if let Ok(entries) = fs::read_dir(dest) {
+            for entry in entries.flatten() {
+                if let Some(entry_name) = entry.file_name().to_str() {
+                    let _ = private.remove_all(entry_name);
+                }
+            }
+        }
+    }
+    let _ = fsfd::remove_entry_at(parent, name);
+}
+
+/// The absolute form of `path`: as given when it is absolute, otherwise relative to the working directory.
+fn absolute(path: &Path) -> Result<PathBuf, String> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    std::env::current_dir().map(|cwd| cwd.join(path)).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
     use super::*;
 
     fn tmp(name: &str) -> PathBuf {
@@ -192,5 +228,60 @@ mod tests {
         assert!(keep(&root, &outside, &base.join("y")).is_err());
         assert!(e.exists() && !base.join("y").exists());
         let _ = fs::remove_dir_all(&base);
+    }
+
+    /// Swaps `parent` between a real folder and a link to `outside` while copies run. A copy may
+    /// fail; no run may land in `outside`.
+    #[test]
+    fn keep_never_writes_outside_when_the_parent_is_swapped_for_a_link() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let base = tmp("swap");
+        let root = tmp_root(&base).unwrap();
+        let outside = base.join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        let parent = base.join("picked");
+        fs::create_dir_all(&parent).unwrap();
+
+        let running = Arc::new(AtomicBool::new(true));
+        let stop = Arc::clone(&running);
+        let (flip_parent, flip_outside) = (parent.clone(), outside.clone());
+        let aside = base.join("aside");
+        let flipper = std::thread::spawn(move || {
+            while stop.load(Ordering::SeqCst) {
+                let _ = fs::rename(&flip_parent, &aside);
+                let _ = std::os::unix::fs::symlink(&flip_outside, &flip_parent);
+                std::thread::yield_now();
+                let _ = fs::remove_file(&flip_parent);
+                let _ = fs::rename(&aside, &flip_parent);
+            }
+        });
+        for i in 0..150 {
+            let run = make_exec(&root, &format!("har-{i:04}"));
+            let _ = keep(&root, &run, &parent.join(format!("kept-{i}")));
+        }
+        running.store(false, Ordering::SeqCst);
+        flipper.join().unwrap();
+
+        let landed: Vec<_> = fs::read_dir(&outside).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert!(landed.is_empty(), "runs landed outside the chosen folder: {landed:?}");
+    }
+
+    /// Removing a run never follows a link out of it: core's `remove_all` unlinks the link.
+    #[test]
+    fn removing_a_run_never_follows_a_link_out_of_it() {
+        let base = tmp("link-remove");
+        let private = base.join("private");
+        store::ensure_private_dir(&private).unwrap();
+        let outside = base.join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("keep.txt"), "x").unwrap();
+        let run = private.join("run");
+        fs::create_dir_all(&run).unwrap();
+        std::os::unix::fs::symlink(&outside, run.join("link")).unwrap();
+        store::PrivateDir::open(&private).unwrap().remove_all("run").unwrap();
+        assert!(!run.exists(), "the run is removed");
+        assert!(outside.join("keep.txt").exists(), "the link's target survives");
     }
 }

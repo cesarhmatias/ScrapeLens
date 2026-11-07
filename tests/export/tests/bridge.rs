@@ -1,4 +1,8 @@
 // Compiles the production module unchanged; does not simulate Tauri nor duplicate the exporters.
+// The App module uses part of fsfd; this harness does not call the rest.
+#[allow(dead_code)]
+#[path = "../../../src-tauri/src/fsfd.rs"]
+mod fsfd;
 #[path = "../../../src-tauri/src/export.rs"]
 mod bridge;
 use std::{fs, path::{Path, PathBuf}};

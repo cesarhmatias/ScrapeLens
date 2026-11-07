@@ -285,16 +285,21 @@ pub fn write_text_file(path: &Path, text: &str) -> Result<SavedFile, String> {
         ));
     }
 
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options
-        .open(path)
-        .map_err(|error| format!("could not create {}: {error}", path.display()))?;
+    // Created inside the parent's descriptor, so a name swapped for a link cannot send the text elsewhere.
+    let parent_abs = std::path::absolute(parent).map_err(|error| format!("invalid destination folder ({}): {error}", parent.display()))?;
+    let dir = crate::fsfd::open_dir_nofollow(&parent_abs)
+        .map_err(|error| format!("invalid destination folder ({}): {error}", parent.display()))?;
+    let file_name = path.file_name().ok_or_else(|| "the destination needs a file name".to_string())?;
+    let mut file = match crate::fsfd::create_file_at(&dir, file_name) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(format!(
+                "the file already exists ({}); choose another name to avoid overwriting",
+                path.display()
+            ));
+        }
+        Err(error) => return Err(format!("could not create {}: {error}", path.display())),
+    };
     file.write_all(text.as_bytes())
         .map_err(|error| format!("failed to write {}: {error}", path.display()))?;
     file.sync_all()
@@ -502,9 +507,24 @@ pub fn sanitize_to_with_options(src: &Path, destination: &Path, include_sensitiv
     })();
 
     if outcome.is_err() && created {
-        let _ = fs::remove_dir_all(&dest_abs);
+        remove_created_folder(&dest_abs);
     }
     outcome
+}
+
+/// Removes a folder this call created, and what the failed write left in it. The folder is
+/// private (created by `ensure_private_dir`), so its entries go through core's descriptor.
+fn remove_created_folder(dest: &Path) {
+    if let Ok(private) = store::PrivateDir::open(dest) {
+        if let Ok(entries) = fs::read_dir(dest) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    let _ = private.remove_all(name);
+                }
+            }
+        }
+    }
+    let _ = fs::remove_dir(dest);
 }
 
 #[cfg(test)]
@@ -818,5 +838,42 @@ mod tests {
         let noted = preview_with(&dir, "req-body", "curl", Some(Err("no attempts".to_string()))).unwrap();
         assert_eq!(plain.text, noted.text);
         assert!(noted.warnings.iter().any(|w| w.code == "export.origins_unavailable"));
+    }
+
+    /// The folder is swapped for a link to `outside` while text files are written into it. A write
+    /// may fail; no file may land in `outside`.
+    #[test]
+    fn text_export_never_lands_outside_when_the_folder_is_swapped_for_a_link() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let base = temp_dir("text-swap");
+        let outside = base.join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        let folder = base.join("picked");
+        fs::create_dir_all(&folder).unwrap();
+
+        let running = Arc::new(AtomicBool::new(true));
+        let stop = Arc::clone(&running);
+        let (flip_folder, flip_outside) = (folder.clone(), outside.clone());
+        let aside = base.join("aside");
+        let flipper = std::thread::spawn(move || {
+            // The folder moves aside (its contents with it), a link takes its name, then both are restored.
+            while stop.load(Ordering::SeqCst) {
+                let _ = fs::rename(&flip_folder, &aside);
+                let _ = std::os::unix::fs::symlink(&flip_outside, &flip_folder);
+                std::thread::yield_now();
+                let _ = fs::remove_file(&flip_folder);
+                let _ = fs::rename(&aside, &flip_folder);
+            }
+        });
+        for i in 0..2000 {
+            let _ = write_text_file(&folder.join(format!("script-{i}.sh")), "#!/bin/sh\necho ok\n");
+        }
+        running.store(false, Ordering::SeqCst);
+        flipper.join().unwrap();
+
+        let landed: Vec<_> = fs::read_dir(&outside).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert!(landed.is_empty(), "text files landed outside the chosen folder: {landed:?}");
     }
 }
