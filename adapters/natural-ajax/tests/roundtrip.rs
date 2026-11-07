@@ -164,11 +164,12 @@ fn hostile_inputs_are_errors_never_panics() {
 /// parse gives about 10, which the bound catches.
 const LINEAR_SLACK: f64 = 3.0;
 
-/// Multiple of the reference (one parse of MAX_OPS operations) that a refused 8 MiB input may
-/// cost. Measured in debug: with the limit, parse and decode cost about 11× the reference (the
-/// 8 MiB pass plus MAX_OPS operations). With the limit removed, the same input costs about 47×
-/// for parse and 73× for decode (8,388,608 operations). 25 lies between, so a missing limit fails.
-const LIMIT_FACTOR: f64 = 25.0;
+/// Multiple of the reference (the 8 MiB byte pass alone) that a refused 8 MiB input may cost.
+/// With the limit, the input costs the pass plus MAX_OPS operations: measured 1.0 to 1.4× the
+/// reference (macOS and Linux arm64, idle and loaded). Without the limit it costs the pass plus
+/// 8,388,608 operations: measured about 3.9 to 4.0× (no-limit mutant, both platforms). 2.3 lies
+/// between, with at least 1.6× margin on each side.
+const LIMIT_FACTOR: f64 = 2.3;
 
 fn fields_text(n: usize) -> String {
     let mut text = String::from("l");
@@ -267,16 +268,15 @@ fn operation_limit_bounds_time_and_memory() {
     // before the timed runs below, which add to the peak.
     eprintln!("operation limit: RSS {:.0} MB", rss_mb());
     assert!(rss_mb() < 500.0, "{} MB", rss_mb());
-    // Time: a bound relative to the work the limit lets through (MAX_OPS operations), timed in
-    // this process. The reference is the average of a block of ten parses, so its duration is
-    // not a short denominator. See LIMIT_FACTOR for the measured ratios.
-    let ok = "l".repeat(grammar::MAX_OPS);
-    let block = min_cpu(3, || {
-        for _ in 0..10 {
-            assert_eq!(grammar::parse(&ok).unwrap().len(), grammar::MAX_OPS);
-        }
+    // Time: a bound relative to the byte pass that every 8 MiB input pays before any operation.
+    // `!` is not an operation, so this input (same size) fails right after that pass: the
+    // reference, timed in this process. A refused `l`×8 MiB pays the pass plus MAX_OPS
+    // operations; without the limit it pays 8,388,608 operations. See LIMIT_FACTOR.
+    let pass_only = format!("!{}", "l".repeat(8 * 1024 * 1024 - 1));
+    let reference = min_cpu(3, || {
+        assert!(grammar::parse(&pass_only).is_err());
     });
-    let bound = (block / 10).mul_f64(LIMIT_FACTOR);
+    let bound = reference.mul_f64(LIMIT_FACTOR);
     let parse = min_cpu(3, || {
         let _ = grammar::parse(&text);
     });
@@ -286,6 +286,8 @@ fn operation_limit_bounds_time_and_memory() {
     assert_cost_within("parse of an 8 MiB input over the limit", parse, bound);
     assert_cost_within("decode of an 8 MiB input over the limit", decode, bound);
     // Just below the limit it still works, and one more operation is refused.
+    let ok = "l".repeat(grammar::MAX_OPS);
+    assert_eq!(grammar::parse(&ok).unwrap().len(), grammar::MAX_OPS);
     assert!(grammar::parse(&format!("{ok}l")).is_err());
 }
 
