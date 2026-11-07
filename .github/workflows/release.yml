@@ -4,8 +4,8 @@
 #
 # Signing, stated plainly:
 # - Linux packages are not signed (SHA-256 and attestation only).
-# - The macOS .app is NOT signed with the Developer ID certificate and is NOT notarized. Those need
-#   the Apple Developer Program (US$ 99 per year) and are task T23. The bundler is told to use the
+# - The macOS .app is NOT signed with a Developer ID certificate and is NOT notarized. The project
+#   does not plan either step. The bundler is told to use the
 #   ad-hoc identity ("-") here, because the configured local identity ("ScrapeLens Local Signing")
 #   exists only on the maintainer's Mac. The release notes say so.
 # - No secrets are used. The default GITHUB_TOKEN creates the draft, with the minimum permissions below.
@@ -91,7 +91,7 @@ jobs:
         working-directory: app
         run: npm ci --no-audit --no-fund
 
-      - name: Build the .app without test-hooks (ad-hoc identity; Developer ID and notarization are T23)
+      - name: Build the .app without test-hooks (ad-hoc identity; no Developer ID or notarization)
         run: |
           ./app/node_modules/.bin/tauri build --bundles app --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}'
 
@@ -157,7 +157,7 @@ jobs:
 
           Signing status:
           - Linux packages: not signed (checksums and attestation only).
-          - macOS .app: ad-hoc signature only. Not signed with the Developer ID certificate and not notarized (task T23, needs the Apple Developer Program). Gatekeeper may block it on download until T23 is done.
+          - macOS .app: ad-hoc signature only. Not signed with a Developer ID certificate and not notarized. Gatekeeper may block it on download; the README explains how to open it.
 
           Test-only code: not included. The release gate checked the shipped binaries for the test variables.
           Validation: build.sh tests, clippy and smoke ran in the pinned container on each architecture.

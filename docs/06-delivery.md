@@ -106,8 +106,8 @@ the following round, also through the interface (result in `docs/07-ui-export.md
    of an empty session; Origin CDP opened by --remote-allow-origins=* during the
    local session. Sanitization remains heuristic, omitting attachments/events
    that cannot be sanitized; export does not guarantee fingerprint/transport.
-4. Developer ID signing/notarization and Intel testing before wide
-   distribution. Nothing published, no push/release in this task.
+4. Intel testing before wide distribution. Developer ID signing and notarization are not
+   planned. Nothing published, no push/release in this task.
 
 The folder `~/Projects/scrapelens-import-tmp/` and the duplicate sessions were
 preserved; no deletion was performed. Usage/build instructions in the README.

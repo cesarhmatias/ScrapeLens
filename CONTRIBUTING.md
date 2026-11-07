@@ -95,7 +95,7 @@ owned by others must be agreed on the project channel.
 - Run `cargo fmt`, `cargo clippy --offline --all-targets` and the tests of the
   touched crate before submitting.
 - Do not publish releases without the maintainer's authorization. The local build is **not
-  signed and not notarized**; distribution requires Developer ID + notarization.
+  signed and not notarized**; the project does not plan Developer ID signing or notarization.
 - Known limitations that must not regress: `--remote-allow-origins=*` on the
   CDP (loopback/ephemeral port/capture window), CDP bodies `unavailable`,
   capture of one target per session, no validated Intel build.

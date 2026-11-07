@@ -23,7 +23,7 @@ commands locally.
 |---|---|---|
 | `ScrapeLens_<version>_<arch>.deb` and `ScrapeLens_<version>_<arch>.AppImage` | Linux, x86_64 and arm64 | none; SHA-256 and attestation |
 | `scrapelens-linux-<arch>` | Linux, standalone executable | none |
-| `ScrapeLens-<version>-macos-arm64.zip` (`ScrapeLens.app`) | macOS arm64 | ad-hoc in CI; not Developer ID; not notarized (T23) |
+| `ScrapeLens-<version>-macos-arm64.zip` (`ScrapeLens.app`) | macOS arm64 | ad-hoc in CI; not Developer ID; not notarized |
 
 The version is the same in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `app/package.json`.
 
@@ -154,8 +154,8 @@ The browsers the App accepts on Linux are listed in [`linux/BROWSERS.md`](linux/
 
 ## Limitations
 
-- No Developer ID signature and no notarization (T23). Until then, Gatekeeper may block the macOS app
-  when it is downloaded from a release.
+- No Developer ID signature and no notarization; the project does not plan either. Gatekeeper may
+  block the macOS app when it is downloaded from a release; the README explains how to open it.
 - The Linux packages are not signed.
 - macOS arm64 only. Intel is neither built nor tested.
 - The save-panel flow of the macOS app is not covered by automated tests.
