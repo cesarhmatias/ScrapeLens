@@ -235,7 +235,7 @@ ScrapeLens/
 ### Prerequisites
 
 - **Rust** `1.88+` (`cargo`, `clippy`)
-- **Node.js** `20+` e `npm`
+- **Node.js** `20+` and `npm`
 - **Xcode Command Line Tools** (on macOS) or WebKitGTK/Tauri dependencies (on Linux — see [`docs/21-linux.md`](docs/21-linux.md))
 
 ### Main commands (from the root)
@@ -269,6 +269,18 @@ cargo build --manifest-path core/Cargo.toml --release
 ```
 
 For contribution guidelines, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+---
+
+## ⚠️ Known Limitations
+
+- **Signing:** no Developer ID and no notarization, and neither is planned. Gatekeeper may block the first launch of the macOS app (see the signing note above). The Linux packages are not signed.
+- **Platforms:** macOS Intel is neither built nor tested. The Linux packages were tested in containers, with `amd64` under emulation, not on bare metal.
+- **Bodies:** a CDP body can be `unavailable`, with the reason recorded. Each body is limited to 5 MiB; above that it is `truncated`.
+- **Sanitization** is heuristic. Review the output before sharing it.
+- **Export** does not reproduce Chrome's TLS, JA3/JA4 or HPACK.
+- **Dependencies:** npm packages and crates are downloaded at build time. Notices for transitive licenses are not compiled yet.
+- **Browser:** capture needs an installed Chromium browser (Chrome, Chromium, Brave, Edge or Arc).
 
 ---
 
