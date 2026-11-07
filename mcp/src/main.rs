@@ -4,6 +4,7 @@ use scrapelens_mcp::live::RealBackend;
 
 #[tokio::main]
 async fn main() {
+    scrapelens_mcp::harden::harden_process();
     let config = match scrapelens_mcp::cli::parse_args(std::env::args().skip(1).collect()) {
         Ok(config) => config,
         Err(message) => {

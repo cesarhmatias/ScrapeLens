@@ -5,6 +5,7 @@
 
 pub mod app;
 pub mod cli;
+pub mod harden;
 pub mod config;
 pub mod error;
 pub mod live;

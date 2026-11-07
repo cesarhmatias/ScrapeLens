@@ -18,11 +18,18 @@
 use std::fmt;
 use std::net::Ipv6Addr;
 
+use zeroize::Zeroizing;
+
 /// A value that must never be printed. `Debug` and `Display` show `***`.
+/// Drop zeroes the buffer.
 #[derive(Clone, PartialEq, Eq)]
-pub struct Secret(String);
+pub struct Secret(Zeroizing<String>);
 
 impl Secret {
+    pub(crate) fn new(value: String) -> Self {
+        Self(Zeroizing::new(value))
+    }
+
     /// The value. Only the upstream handshake may call this.
     pub(crate) fn expose(&self) -> &str {
         &self.0
@@ -249,8 +256,8 @@ fn split_credentials(userinfo: &str) -> Result<(Secret, Option<Secret>), ProxyEr
         return Err(ProxyError::InvalidFormat);
     }
     Ok((
-        Secret(percent_decode(user)?),
-        password.map(|p| percent_decode(p).map(Secret)).transpose()?,
+        Secret::new(percent_decode(user)?),
+        password.map(|p| percent_decode(p).map(Secret::new)).transpose()?,
     ))
 }
 
@@ -274,8 +281,8 @@ fn parse_bare(input: &str) -> Result<ProxyLink, ProxyError> {
                 scheme: ProxyScheme::Http,
                 host: (*host).to_string(),
                 port,
-                user: Some(Secret(percent_decode(user)?)),
-                password: Some(Secret(percent_decode(password)?)),
+                user: Some(Secret::new(percent_decode(user)?)),
+                password: Some(Secret::new(percent_decode(password)?)),
             })
         }
         _ => Err(ProxyError::InvalidFormat),

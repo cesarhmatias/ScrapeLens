@@ -13,6 +13,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tungstenite = "0.28"
 libc = "0.2"
+# 1.8.2: `Zeroizing` on rustc 1.80. 1.9 needs rustc 1.85.
+zeroize = "=1.8.2"
 # TLS to an https:// proxy on the relay path. ring only (no aws-lc). Certificate
 # checks use the system trust store; nothing disables them.
 rustls = { version = "0.23.31", default-features = false, features = ["ring", "std", "tls12"] }

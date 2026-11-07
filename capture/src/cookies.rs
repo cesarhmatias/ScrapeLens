@@ -25,6 +25,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use zeroize::Zeroize;
 
 /// Cookie storage type of the source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,7 +68,7 @@ pub struct BrowserCookieSource {
 /// Cookie ready for CDP's `Network.setCookies`. `domain` is the `host_key` as it
 /// is in the database (it may start with `.`); `expires` is Unix time in seconds and
 /// is absent for session cookies.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportedCookie {
     pub name: String,
@@ -80,6 +81,27 @@ pub struct ImportedCookie {
     pub same_site: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expires: Option<i64>,
+}
+
+impl std::fmt::Debug for ImportedCookie {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImportedCookie")
+            .field("name", &self.name)
+            .field("value", &"***")
+            .field("domain", &self.domain)
+            .field("path", &self.path)
+            .field("secure", &self.secure)
+            .field("http_only", &self.http_only)
+            .field("same_site", &self.same_site)
+            .field("expires", &self.expires)
+            .finish()
+    }
+}
+
+impl Drop for ImportedCookie {
+    fn drop(&mut self) {
+        self.value.zeroize();
+    }
 }
 
 /// Result of an import. `skipped` counts database cookies left out on purpose (expired,
@@ -989,7 +1011,7 @@ fn chromium_keys(product: &ChromiumProduct, version_prefix: &[u8]) -> Vec<Result
     {
         let _ = version_prefix;
         let key = keychain_password(product.keychain_service, product.keychain_account)
-            .map(|password| pbkdf2_sha1(&password, b"saltysalt", 1003, 16));
+            .map(|password| pbkdf2_sha1(&password[..], b"saltysalt", 1003, 16));
         vec![key]
     }
     #[cfg(target_os = "linux")]
@@ -1008,7 +1030,7 @@ fn chromium_keys(product: &ChromiumProduct, version_prefix: &[u8]) -> Vec<Result
 }
 
 #[cfg(target_os = "macos")]
-fn keychain_password(service: &str, account: &str) -> Result<Vec<u8>, String> {
+fn keychain_password(service: &str, account: &str) -> Result<zeroize::Zeroizing<Vec<u8>>, String> {
     let mut child = Command::new("/usr/bin/security")
         .args(["find-generic-password", "-w", "-s", service, "-a", account])
         .stdin(Stdio::null())
@@ -1035,7 +1057,7 @@ fn keychain_password(service: &str, account: &str) -> Result<Vec<u8>, String> {
                 if password.is_empty() {
                     return Err(format!("the \"{service}\" password in the Keychain came back empty"));
                 }
-                return Ok(password);
+                return Ok(zeroize::Zeroizing::new(password));
             }
             Ok(None) if std::time::Instant::now() < deadline => {
                 std::thread::sleep(std::time::Duration::from_millis(50));
@@ -1187,6 +1209,7 @@ fn keyring_error(browser: &str, why: &str) -> String {
 #[cfg(any(target_os = "linux", test))]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn browser_key_from_password(product: &ChromiumProduct, password: Vec<u8>) -> Result<Vec<u8>, String> {
+    let password = zeroize::Zeroizing::new(password);
     if password.is_empty() {
         // The Secret Service answers an empty result for a locked collection too (it does
         // not prompt), so the two cases share the message that fixes both.
@@ -1195,7 +1218,7 @@ fn browser_key_from_password(product: &ChromiumProduct, password: Vec<u8>) -> Re
             product.browser
         ));
     }
-    Ok(pbkdf2_sha1(&password, b"saltysalt", 1, 16))
+    Ok(pbkdf2_sha1(&password[..], b"saltysalt", 1, 16))
 }
 
 /// A failure to start `secret-tool`. `NotFound` names the package to install; anything
@@ -1378,6 +1401,53 @@ fn drop_expired(cookies: &mut Vec<ImportedCookie>, skipped: &mut usize) {
     *skipped += before - cookies.len();
 }
 
+type CachedKey = Result<zeroize::Zeroizing<Vec<u8>>, String>;
+
+/// Keys derived for one import. Drop, and [`KeyCache::clear`], zero the bytes.
+#[derive(Default)]
+struct KeyCache {
+    keys: std::collections::HashMap<Vec<u8>, Vec<CachedKey>>,
+}
+
+impl KeyCache {
+    fn candidates(
+        &mut self,
+        prefix: &[u8],
+        key_for: &mut impl FnMut(&[u8]) -> Vec<Result<Vec<u8>, String>>,
+    ) -> &[CachedKey] {
+        if !self.keys.contains_key(prefix) {
+            let filled = key_for(prefix)
+                .into_iter()
+                .map(|item| item.map(zeroize::Zeroizing::new))
+                .collect();
+            self.keys.insert(prefix.to_vec(), filled);
+        }
+        &self.keys[prefix]
+    }
+
+    fn clear(&mut self) {
+        for group in self.keys.values_mut() {
+            for key in group.iter_mut().flatten() {
+                (*key).zeroize();
+            }
+        }
+        self.keys.clear();
+        #[cfg(test)]
+        KEY_CACHE_CLEARED.with(|flag| flag.set(true));
+    }
+}
+
+impl Drop for KeyCache {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static KEY_CACHE_CLEARED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// Decrypts one encrypted value. The key comes from the value's own prefix (`v10` or
 /// `v11`) and is cached per prefix, so a profile that mixes both versions keeps each
 /// value readable. A key that cannot be had fails only the values it covers.
@@ -1385,26 +1455,24 @@ fn decrypt_row(
     encrypted: &[u8],
     host_key: &str,
     version: Option<i64>,
-    keys: &mut std::collections::HashMap<Vec<u8>, Vec<Result<Vec<u8>, String>>>,
+    keys: &mut KeyCache,
     key_for: &mut impl FnMut(&[u8]) -> Vec<Result<Vec<u8>, String>>,
 ) -> Result<String, String> {
     if encrypted.len() < 3 {
         return Err("encrypted value is too short to decrypt".to_string());
     }
-    let prefix = &encrypted[..3];
-    if prefix != b"v10" && prefix != b"v11" {
+    let prefix = encrypted[..3].to_vec();
+    if prefix.as_slice() != b"v10" && prefix.as_slice() != b"v11" {
         return Err("unknown encryption prefix".to_string());
     }
-    let candidates = keys
-        .entry(prefix.to_vec())
-        .or_insert_with(|| key_for(prefix));
+    let candidates = keys.candidates(&prefix, key_for);
     let mut tried = false;
     let mut first_missing: Option<String> = None;
-    for candidate in candidates.iter() {
+    for candidate in candidates {
         match candidate {
             Ok(key) => {
                 tried = true;
-                if let Ok(value) = decrypt_chromium_value(encrypted, key, host_key, version) {
+                if let Ok(value) = decrypt_chromium_value(encrypted, &key[..], host_key, version) {
                     return Ok(value);
                 }
             }
@@ -1433,7 +1501,7 @@ fn read_chromium_rows(
     tally: &mut ImportTally,
     mut key_for: impl FnMut(&[u8]) -> Vec<Result<Vec<u8>, String>>,
 ) -> Vec<ImportedCookie> {
-    let mut keys = std::collections::HashMap::new();
+    let mut keys = KeyCache::default();
     let mut cookies = Vec::new();
     for row in rows {
         if row.len() < 10 {
@@ -1488,6 +1556,7 @@ fn read_chromium_rows(
             expires,
         });
     }
+    keys.clear();
     cookies
 }
 
@@ -2398,6 +2467,67 @@ mod tests {
         assert!(payload[1].get("sameSite").is_none());
         assert!(payload[1].get("expires").is_none());
         assert_eq!(payload[1]["httpOnly"], false);
+    }
+
+    #[test]
+    fn debug_hides_cookie_and_proxy_secrets() {
+        let cookie = ImportedCookie {
+            name: "sid".into(),
+            value: "cookie-secret-value".into(),
+            domain: ".example.com.br".into(),
+            path: "/".into(),
+            secure: true,
+            http_only: true,
+            same_site: None,
+            expires: None,
+        };
+        let shown = format!("{cookie:?}");
+        assert!(!shown.contains("cookie-secret-value"), "{shown}");
+        assert!(shown.contains("sid"), "{shown}");
+        let json = serde_json::to_string(&cookie).unwrap();
+        assert!(json.contains("cookie-secret-value"), "{json}");
+        let config = crate::CaptureConfig {
+            chrome: PathBuf::from("chrome"),
+            session_dir: PathBuf::from("session"),
+            start_url: "https://example.com.br/".into(),
+            headless: true,
+            ignore_cert: false,
+            network: crate::NetworkMode::Open,
+            cookie_source: None,
+            initial_cookies: vec![cookie],
+            proxy: Some(
+                crate::proxy::ProxyLink::parse("http://user:proxy-secret-value@127.0.0.1:9").unwrap(),
+            ),
+            test_proxy_bypass_loopback: false,
+        };
+        let shown = format!("{config:?}");
+        assert!(!shown.contains("cookie-secret-value"), "{shown}");
+        assert!(!shown.contains("proxy-secret-value"), "{shown}");
+        assert!(!shown.contains("user:proxy"), "{shown}");
+    }
+
+    #[test]
+    fn the_key_cache_is_cleared_after_the_rows_are_read() {
+        KEY_CACHE_CLEARED.with(|flag| flag.set(false));
+        let key = pbkdf2_sha1(b"peanuts", b"saltysalt", 1, 16);
+        let rows = vec![chromium_row(
+            ".example.com.br",
+            "sid",
+            "",
+            &encrypted_value(b"v10", &key, "secret-value"),
+        )];
+        let mut tally = ImportTally::default();
+        let cookies = read_chromium_rows(&rows, "app.example.com.br", None, &mut tally, |_| {
+            vec![Ok(key.clone())]
+        });
+        assert_eq!(cookies[0].value, "secret-value");
+        assert!(KEY_CACHE_CLEARED.with(|flag| flag.get()));
+        let mut cache = KeyCache::default();
+        cache
+            .keys
+            .insert(b"v10".to_vec(), vec![Ok(zeroize::Zeroizing::new(key))]);
+        cache.clear();
+        assert!(cache.keys.is_empty());
     }
 
     #[test]

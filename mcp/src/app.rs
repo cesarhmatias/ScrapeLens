@@ -36,6 +36,7 @@ async fn termination() {
 /// because the blocked stdin read keeps the runtime from terminating on its own
 /// when the exit comes from a signal.
 pub async fn run(config: Config, backend: Arc<dyn CaptureBackend>) -> i32 {
+    crate::harden::harden_process();
     // stdout is the JSON-RPC channel: all diagnostics go to stderr.
     eprintln!(
         "scrapelens-mcp: sessions in {} (reveal {}, capture without confirmation {}, sensitive export without confirmation {})",
