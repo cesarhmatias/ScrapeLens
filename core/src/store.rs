@@ -144,17 +144,33 @@ pub fn ensure_private_dir(path: &Path) -> Result<()> {
                     }
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    fs::DirBuilder::new()
-                        .recursive(false)
-                        .mode(0o700)
-                        .create(&current)
-                        .map_err(|error| CoreError::io(&current, error))?;
-                    let meta = fs::symlink_metadata(&current)
-                        .map_err(|error| CoreError::io(&current, error))?;
-                    if meta.file_type().is_symlink() || !meta.is_dir() {
+                    // Another thread may create the same component between the
+                    // lstat and create. On EEXIST, inspect the component again
+                    // with the same rules; a symlink planted in the window is
+                    // still refused, and a directory created by the peer is
+                    // accepted only after that re-check.
+                    let mut ready = false;
+                    for _ in 0..8 {
+                        if component_ready(&current)? {
+                            ready = true;
+                            break;
+                        }
+                        match fs::DirBuilder::new()
+                            .recursive(false)
+                            .mode(0o700)
+                            .create(&current)
+                        {
+                            Ok(()) => continue,
+                            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                                continue;
+                            }
+                            Err(error) => return Err(CoreError::io(&current, error)),
+                        }
+                    }
+                    if !ready || !component_ready(&current)? {
                         return Err(CoreError::LimitExceeded {
                             message: format!(
-                                "{} changed while it was being created; refused",
+                                "{} changed repeatedly while it was being created; refused",
                                 current.display()
                             ),
                         });
@@ -163,16 +179,73 @@ pub fn ensure_private_dir(path: &Path) -> Result<()> {
                 Err(error) => return Err(CoreError::io(&current, error)),
             }
         }
-        let meta = fs::symlink_metadata(path).map_err(|error| CoreError::io(path, error))?;
-        check_private_dir(path, &meta)?;
+        set_private_mode(path)?;
     }
     #[cfg(not(unix))]
     {
         if !path.exists() {
             fs::create_dir_all(path).map_err(|error| CoreError::io(path, error))?;
         }
+        set_mode(path, 0o700)?;
     }
-    set_mode(path, 0o700)
+    Ok(())
+}
+
+/// Same rules as a component of `ensure_private_dir`: a missing component is
+/// false, an accepted symlink or a real directory is true.
+#[cfg(unix)]
+fn component_ready(path: &Path) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            if is_trusted_symlink_ancestor(path) {
+                Ok(true)
+            } else {
+                Err(CoreError::LimitExceeded {
+                    message: format!(
+                        "{} is a symbolic link; refused (ancestor of the destination); indicate a real folder for the session",
+                        path.display()
+                    ),
+                })
+            }
+        }
+        Ok(meta) if meta.is_dir() => Ok(true),
+        Ok(_) => Err(CoreError::LimitExceeded {
+            message: format!("{} exists and is not a directory; refused", path.display()),
+        }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(CoreError::io(path, error)),
+    }
+}
+
+/// Opens the directory and changes its mode through the opened file descriptor.
+/// The path and the opened inode are compared before the chmod, so a path
+/// swapped to a symlink after the check cannot redirect the chmod.
+#[cfg(unix)]
+fn set_private_mode(path: &Path) -> Result<()> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let file = File::open(path).map_err(|error| CoreError::io(path, error))?;
+    let meta = fs::symlink_metadata(path).map_err(|error| CoreError::io(path, error))?;
+    if meta.file_type().is_symlink() {
+        return Err(CoreError::LimitExceeded {
+            message: format!("{} is a symbolic link; refused", path.display()),
+        });
+    }
+    let opened = file
+        .metadata()
+        .map_err(|error| CoreError::io(path, error))?;
+    if opened.dev() != meta.dev() || opened.ino() != meta.ino() {
+        return Err(CoreError::LimitExceeded {
+            message: format!(
+                "{} changed while it was being opened; refused",
+                path.display()
+            ),
+        });
+    }
+    check_private_dir(path, &meta)?;
+    file.set_permissions(fs::Permissions::from_mode(0o700))
+        .map_err(|error| CoreError::io(path, error))?;
+    let after = fs::symlink_metadata(path).map_err(|error| CoreError::io(path, error))?;
+    check_private_dir(path, &after)
 }
 
 #[cfg(unix)]
