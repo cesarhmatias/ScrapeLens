@@ -175,11 +175,22 @@ fn parse_cost_is_linear() {
         ));
     }
     text.push_str("x02ok");
-    let start = std::time::Instant::now();
+    let start = thread_cpu();
     let items = grammar::parse(&text).expect("parse");
     let ops: Vec<_> = items.iter().map(|i| i.op.clone()).collect();
     assert_eq!(grammar::serialize(&ops).unwrap(), text);
-    assert!(start.elapsed().as_secs_f64() < 2.0, "{:?}", start.elapsed());
+    let spent = thread_cpu() - start;
+    assert!(spent.as_secs_f64() < 2.0, "CPU time {spent:?}");
+}
+
+/// CPU time spent by this thread. The cost bounds below measure work, not the wall clock: a
+/// loaded host or other tests running in parallel must not turn a bounded parse into a failure.
+fn thread_cpu() -> std::time::Duration {
+    let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    // SAFETY: `ts` is a valid, writable timespec; CLOCK_THREAD_CPUTIME_ID is supported on Linux and macOS.
+    let rc = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut ts) };
+    assert_eq!(rc, 0, "clock_gettime(CLOCK_THREAD_CPUTIME_ID) failed");
+    std::time::Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32)
 }
 
 fn rss_mb() -> f64 {
@@ -198,10 +209,11 @@ fn rss_mb() -> f64 {
 fn operation_limit_bounds_time_and_memory() {
     // `l`×8 MiB: refused by the operation limit, without exhausting memory.
     let text = "l".repeat(8 * 1024 * 1024);
-    let start = std::time::Instant::now();
+    let start = thread_cpu();
     assert!(grammar::parse(&text).is_err());
     assert!(NaturalAjax.decode(&text).is_err());
-    assert!(start.elapsed().as_secs_f64() < 2.0, "{:?}", start.elapsed());
+    let spent = thread_cpu() - start;
+    assert!(spent.as_secs_f64() < 2.0, "CPU time {spent:?}");
     assert!(rss_mb() < 500.0, "{} MB", rss_mb());
     // Just below the limit it still works.
     let ok = "l".repeat(grammar::MAX_OPS);

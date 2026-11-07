@@ -8,6 +8,16 @@ use std::process::Command;
 use scrapelens_core::adapter::{AdapterPart, Decoded, PartRole, ProtocolAdapter};
 use scrapelens_natural_ajax::{NaturalAjax, PYTHON_ENCODER, PYTHON_FUNCTION};
 
+/// CPU time spent by this thread. The cost bounds below measure work, not the wall clock: a
+/// loaded host or other tests running in parallel must not turn a bounded parse into a failure.
+fn thread_cpu() -> std::time::Duration {
+    let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    // SAFETY: `ts` is a valid, writable timespec; CLOCK_THREAD_CPUTIME_ID is supported on Linux and macOS.
+    let rc = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut ts) };
+    assert_eq!(rc, 0, "clock_gettime(CLOCK_THREAD_CPUTIME_ID) failed");
+    std::time::Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32)
+}
+
 fn role_code(role: &PartRole) -> &'static str {
     match role {
         PartRole::Structure => "S",
@@ -407,11 +417,12 @@ fn deep_scopes_and_big_dictionaries_are_refused_fast_in_rust_and_python() {
         dict.push_str(&format!("s8{:02}{:08}{:02}", 2, i, 10));
         dict.push_str("ab");
     }
-    let start = std::time::Instant::now();
+    let start = thread_cpu();
     assert!(grammar::parse(&deep).is_err());
     assert!(grammar::parse(&dict).is_err());
     assert!(NaturalAjax.decode(&deep).is_err());
-    assert!(start.elapsed().as_secs_f64() < 1.0, "{:?}", start.elapsed());
+    let spent = thread_cpu() - start;
+    assert!(spent.as_secs_f64() < 1.0, "CPU time {spent:?}");
     // Depth and dictionary within the limit keep working.
     let ok_depth = "b01a".repeat(32) + "p0100001ab" + &"c".repeat(32) + "x02ok";
     assert!(grammar::parse(&ok_depth).is_ok());
@@ -432,7 +443,7 @@ def fail(message):
     raise SystemExit('priming: ' + message)
 {PYTHON_ENCODER}
 texts = json.load(open(sys.argv[1], encoding='utf-8'))
-t = time.time()
+t = time.process_time()
 res = []
 for text in texts:
     try:
@@ -440,7 +451,7 @@ for text in texts:
     except SystemExit:
         res.append(False)
 rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-print(json.dumps({{'ok': res, 'secs': time.time() - t, 'rss_mb': rss / (1024 * 1024 if sys.platform == 'darwin' else 1024)}}))
+print(json.dumps({{'ok': res, 'secs': time.process_time() - t, 'rss_mb': rss / (1024 * 1024 if sys.platform == 'darwin' else 1024)}}))
 "#
             ),
         )
@@ -484,14 +495,14 @@ def fail(message):
 {PYTHON_ENCODER}
 texts = json.load(open(sys.argv[1], encoding='utf-8'))
 res = []
-t = time.time()
+t = time.process_time()
 for text in texts:
     try:
         {PYTHON_DECODER}(text); res.append(True)
     except SystemExit:
         res.append(False)
 rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-print(json.dumps({{'ok': res, 'secs': time.time() - t, 'rss_mb': rss / (1024 * 1024 if sys.platform == 'darwin' else 1024)}}))
+print(json.dumps({{'ok': res, 'secs': time.process_time() - t, 'rss_mb': rss / (1024 * 1024 if sys.platform == 'darwin' else 1024)}}))
 "#
         ),
     )
