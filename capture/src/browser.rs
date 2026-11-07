@@ -1377,6 +1377,17 @@ mod tests {
             seen_in_cdp("m=agent-click"),
             "the click is not in the capture's CDP"
         );
+        let imported = scrapelens_core::import_session_dir(Path::new(&report.session_dir))
+            .expect("the capture session imports");
+        assert!(
+            imported
+                .bundle
+                .session
+                .requests
+                .iter()
+                .any(|request| request.url.contains("m=agent-click")),
+            "the agent's click request is not in the captured session"
+        );
         println!("server saw: {:?}", site.seen_paths());
     }
 

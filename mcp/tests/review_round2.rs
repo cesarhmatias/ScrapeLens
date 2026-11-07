@@ -57,7 +57,7 @@ fn confirmation_text_never_carries_injected_lines() {
 // ---- R4: expose_cdp warns that the port has no authentication --------------------------------
 
 #[test]
-fn expose_cdp_confirmation_warns_about_unauthenticated_port() {
+fn expose_cdp_confirmation_warns_about_unauthenticated_socket() {
     let work = tempfile::tempdir().unwrap();
     let mut client = fake(work.path(), Elicit::Decline, &[]);
     client.tool(
@@ -67,7 +67,7 @@ fn expose_cdp_confirmation_warns_about_unauthenticated_port() {
     let message = client.elicitations[0].clone();
     for needle in [
         "has no authentication",
-        "any local process",
+        "any process running as this user",
         "control the whole Chrome",
         "Runtime.evaluate",
         "not HttpOnly",
