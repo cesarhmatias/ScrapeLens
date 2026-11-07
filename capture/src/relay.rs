@@ -95,6 +95,13 @@ impl ProxyPlan {
     pub(crate) fn peer_check(&self) -> PeerCheck {
         self.relay.as_ref().map(Relay::peer_check).unwrap_or_default()
     }
+
+    /// Closes the relay once the browser has exited; see [`Relay::close_after_browser`].
+    pub(crate) fn close_after_browser(&mut self, grace: Duration) {
+        if let Some(relay) = self.relay.as_mut() {
+            relay.close_after_browser(grace);
+        }
+    }
 }
 
 /// How long the process check took, and how many connections it refused.
@@ -279,6 +286,30 @@ impl Relay {
     #[cfg(test)]
     fn tracked_sockets(&self) -> usize {
         self.sockets.lock().map(|list| list.len()).unwrap_or(0)
+    }
+
+    /// Closes the relay once the browser that owned it has exited, before the session is written.
+    /// Nothing is admitted any more, and the tunnels still moving get `grace` to finish; the rest
+    /// are shut down. The counts and the failure list stay readable.
+    pub(crate) fn close_after_browser(&mut self, grace: Duration) {
+        self.owner.store(0, Ordering::SeqCst);
+        self.stop.store(true, Ordering::SeqCst);
+        let deadline = std::time::Instant::now() + grace;
+        while std::time::Instant::now() < deadline {
+            let open = self.sockets.lock().map(|list| list.len()).unwrap_or(0);
+            if open == 0 {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        if let Ok(sockets) = self.sockets.lock() {
+            for (_, socket) in sockets.iter() {
+                let _ = socket.shutdown(Shutdown::Both);
+            }
+        }
+        if let Some(handle) = self.accept.take() {
+            let _ = handle.join();
+        }
     }
 
     /// The loopback port Chrome must use: `socks5://127.0.0.1:<port>`.
@@ -2206,6 +2237,32 @@ mod wire_tests {
         }
         assert_eq!(relay.peer_check().refused, strangers.len() as u64, "every stranger was checked and refused");
         drop(strangers);
+    }
+
+    /// The browser exits while a request is in flight: the relay closes after the tunnel's
+    /// window, and the bytes already sent still come back. The counts stay readable.
+    #[test]
+    fn closing_after_the_browser_exits_lets_an_in_flight_tunnel_finish() {
+        let echo = echo_server();
+        let (up, _seen) = socks_upstream(USER, PASSWORD);
+        let link = ProxyLink::parse(&format!("socks5://{USER}:{PASSWORD}@127.0.0.1:{up}")).unwrap();
+        let mut relay = Relay::start(&link, None).expect("relay starts");
+        relay.set_owner_pid(std::process::id());
+        let (code, mut tunnel) = chrome_connect(relay.port(), echo);
+        assert_eq!(code, 0);
+        let reader = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(200));
+            tunnel.write_all(b"late").unwrap();
+            let mut back = [0u8; 4];
+            tunnel.read_exact(&mut back).map(|_| back)
+        });
+        let started = std::time::Instant::now();
+        relay.close_after_browser(Duration::from_secs(3));
+        let took = started.elapsed();
+        assert_eq!(&reader.join().unwrap().expect("the in-flight bytes came back"), b"late");
+        assert!(took < Duration::from_secs(3), "the window ended early: {took:?}");
+        assert!(relay.peer_check().checks >= 1, "the counts stay readable");
+        assert!(TcpListener::bind((Ipv4Addr::LOCALHOST, relay.port())).is_ok(), "the port is released");
     }
 
     /// Runs only when spawned by `a_stranger_is_refused_and_a_child_of_the_owner_is_admitted`.
