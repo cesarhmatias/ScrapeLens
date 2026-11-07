@@ -15,7 +15,28 @@ use scrapelens_core::store;
 
 use rustix::fs::{AtFlags, Mode, OFlags};
 
-const DIR_FLAGS: OFlags = OFlags::DIRECTORY.union(OFlags::RDONLY).union(OFlags::NOFOLLOW).union(OFlags::CLOEXEC);
+/// Flags for a FINAL directory: it is opened readable (the caller may list it).
+fn dir_flags() -> OFlags {
+    OFlags::DIRECTORY | OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC
+}
+
+/// Flags for an ANCESTOR: it only needs to be a `*at` dirfd. O_PATH (Linux) and
+/// O_EXEC|O_DIRECTORY (macOS O_SEARCH) do not require the read bit, so a path under
+/// a 0311 folder stays reachable (review-013c L-2).
+fn search_flags() -> OFlags {
+    #[cfg(target_os = "linux")]
+    {
+        OFlags::PATH | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC
+    }
+    #[cfg(target_os = "macos")]
+    {
+        OFlags::from_bits_retain(0x4000_0000) | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        dir_flags()
+    }
+}
 
 /// Opens the absolute `path` as a directory. Every component is opened relative to the descriptor
 /// of its parent without following links, so a name swapped for a link during the walk fails it.
@@ -30,7 +51,8 @@ pub fn open_dir_nofollow(path: &Path) -> io::Result<OwnedFd> {
     }
     let parts: Vec<Component> = path.components().collect();
     let last = parts.iter().rposition(|part| matches!(part, Component::Normal(_) | Component::ParentDir));
-    let mut fd = rustix::fs::open("/", DIR_FLAGS, Mode::empty())?;
+    let root_flags = if last.is_some() { search_flags() } else { dir_flags() };
+    let mut fd = rustix::fs::open("/", root_flags, Mode::empty())?;
     let mut prefix = PathBuf::from("/");
     for (index, part) in parts.iter().enumerate() {
         match part {
@@ -40,7 +62,7 @@ pub fn open_dir_nofollow(path: &Path) -> io::Result<OwnedFd> {
             }
             Component::ParentDir => {
                 prefix.pop();
-                fd = rustix::fs::openat(&fd, "..", DIR_FLAGS, Mode::empty()).map_err(io::Error::from)?;
+                fd = rustix::fs::openat(&fd, "..", search_flags(), Mode::empty()).map_err(io::Error::from)?;
             }
             _ => {}
         }
@@ -50,10 +72,16 @@ pub fn open_dir_nofollow(path: &Path) -> io::Result<OwnedFd> {
 
 /// One component of the walk. `prefix` is its path, for the rule and for the error.
 fn open_step(dir: &OwnedFd, name: &OsStr, prefix: &Path, is_final: bool) -> io::Result<OwnedFd> {
-    match rustix::fs::openat(dir, name, DIR_FLAGS, Mode::empty()) {
+    let flags = if is_final { dir_flags() } else { search_flags() };
+    match rustix::fs::openat(dir, name, flags, Mode::empty()) {
         Ok(next) => Ok(next),
-        // A symbolic link: O_DIRECTORY reports it as ENOTDIR on macOS, and O_NOFOLLOW as ELOOP elsewhere.
+        // O_DIRECTORY reports a link as ENOTDIR on macOS and as ELOOP elsewhere. A
+        // regular file also gives ENOTDIR: check the entry before calling it a link.
         Err(error) if error == rustix::io::Errno::LOOP || error == rustix::io::Errno::NOTDIR => {
+            let link = rustix::fs::statat(dir, name, AtFlags::SYMLINK_NOFOLLOW).map_err(io::Error::from)?;
+            if rustix::fs::FileType::from_raw_mode(link.st_mode as _) != rustix::fs::FileType::Symlink {
+                return Err(io::Error::from(rustix::io::Errno::NOTDIR));
+            }
             let refused = || {
                 io::Error::new(io::ErrorKind::PermissionDenied, format!("{} is a symbolic link; refused", prefix.display()))
             };
@@ -61,11 +89,10 @@ fn open_step(dir: &OwnedFd, name: &OsStr, prefix: &Path, is_final: bool) -> io::
                 return Err(refused());
             }
             let parent = rustix::fs::fstat(dir).map_err(io::Error::from)?;
-            let link = rustix::fs::statat(dir, name, AtFlags::SYMLINK_NOFOLLOW).map_err(io::Error::from)?;
             if link.st_uid != 0 || parent.st_uid != 0 || parent.st_mode & 0o022 != 0 {
                 return Err(refused());
             }
-            rustix::fs::openat(dir, name, OFlags::DIRECTORY | OFlags::RDONLY | OFlags::CLOEXEC, Mode::empty())
+            rustix::fs::openat(dir, name, search_flags().difference(OFlags::NOFOLLOW), Mode::empty())
                 .map_err(io::Error::from)
         }
         Err(error) => Err(io::Error::from(error)),
@@ -88,7 +115,7 @@ pub fn create_file_at(dir: &OwnedFd, name: &OsStr) -> io::Result<File> {
 /// Removes the entry `name` inside `dir`, and everything under it when it is a folder. Links are
 /// removed as links, never followed.
 pub fn remove_entry_at(dir: &OwnedFd, name: &OsStr) -> io::Result<()> {
-    match rustix::fs::openat(dir, name, DIR_FLAGS, Mode::empty()) {
+    match rustix::fs::openat(dir, name, dir_flags(), Mode::empty()) {
         Ok(child) => {
             for entry in rustix::fs::Dir::read_from(&child)? {
                 let entry = entry?;
@@ -195,5 +222,40 @@ mod tests {
             "the link leads to the folder it points to"
         );
         let _ = std::fs::remove_dir(&probe);
+    }
+}
+
+#[cfg(test)]
+mod l2_tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+
+    #[test]
+    fn an_ancestor_without_the_read_bit_opens_with_search_rights() {
+        let base = std::env::temp_dir().join(format!("sl-fsfd-0311-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let locked = base.join("locked");
+        std::fs::create_dir_all(locked.join("sub")).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o311)).unwrap();
+        let fd = open_dir_nofollow(&locked.join("sub")).expect("a 0311 ancestor is searched, not read");
+        create_file_at(&fd, OsStr::new("probe.txt")).unwrap();
+        assert!(locked.join("sub/probe.txt").exists());
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn a_regular_file_in_the_path_is_not_reported_as_a_link() {
+        let base = std::env::temp_dir().join(format!("sl-fsfd-file-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::write(base.join("file"), b"x").unwrap();
+        let error = open_dir_nofollow(&base.join("file/sub")).unwrap_err();
+        assert!(
+            !error.to_string().contains("symbolic link"),
+            "a file must report ENOTDIR, not a link: {error}"
+        );
+        std::fs::remove_dir_all(&base).unwrap();
     }
 }
