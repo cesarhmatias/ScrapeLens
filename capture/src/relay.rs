@@ -1516,10 +1516,14 @@ fn pipe(client: TcpStream, upstream: TcpStream) {
         return;
     };
     let (mut client_w, mut upstream_w) = (client, upstream);
-    let forward = thread::spawn(move || {
+    // Builder, not `thread::spawn`: at a thread limit the closure would panic and take the
+    // relay down. Without a forwarder both streams are dropped and the tunnel closes.
+    let Ok(forward) = thread::Builder::new().name("relay-pipe".to_string()).spawn(move || {
         let _ = copy_retry(&mut client_r, &mut upstream_w);
         let _ = upstream_w.shutdown(Shutdown::Write);
-    });
+    }) else {
+        return;
+    };
     let _ = copy_retry(&mut upstream_r, &mut client_w);
     let _ = client_w.shutdown(Shutdown::Write);
     let _ = forward.join();
