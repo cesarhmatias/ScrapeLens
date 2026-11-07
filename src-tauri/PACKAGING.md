@@ -27,6 +27,11 @@ commands locally.
 
 The version is the same in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `app/package.json`.
 
+The App's executable also runs the MCP server: `scrapelens mcp --sessions-dir <dir>` (the same code as
+`scrapelens-mcp`, the same version and hardening). The packages carry it: `Contents/MacOS/scrapelens` in
+the `.app`, `/usr/bin/scrapelens` in the `.deb`, and the AppImage's `AppRun`, which runs
+`usr/bin/scrapelens`. How a client is configured is in the README, section "Configuring an MCP client".
+
 Release binaries are built without the `test-hooks` feature, so the test-only variables and
 command-line actions are not in them (see [TEST-HOOKS.md](TEST-HOOKS.md)). The check below prints
 any test variable found in a binary; it must print nothing:

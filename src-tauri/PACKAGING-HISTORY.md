@@ -10,7 +10,54 @@ Notes for reading this file:
 - Paths to agent workspaces, personal home folders and temporary folders were removed; the logs they pointed to were not kept.
 - The hashes identify the artifacts of each round; they are not reproducible recipes.
 
-## macOS — release 0.1.3 (2026-11-06, current candidate)
+## macOS and Linux — release 0.1.3 with the MCP subcommand (2026-11-07, current)
+
+Commits: `d44ce13` (the MCP command-line entry is shared as `scrapelens_mcp::entry`; the crate takes
+the App's version 0.1.3), `ed17f4a` (the App runs `scrapelens mcp` before Tauri starts, with the App's
+hardening; tests check that the App, the Cargo package and the MCP server share one version), `ae8ca37`
+(the Linux build context copies `mcp` and `recon`). The macOS bundle is built from `ed17f4a`; the Linux
+packages from `ae8ca37`. The only difference between them is the Docker context.
+
+Checks. macOS (`ed17f4a`, clean export, default features): `npm test`, typecheck and build pass;
+`cargo test --locked` 97 passed, 8 ignored; `cargo clippy --locked -D warnings` clean. Linux (`ae8ca37`,
+`src-tauri/linux/build.sh`, arm64): `cargo test --locked` 104 passed, clippy clean, the front-end tests and
+`tsc` pass, the smoke test loads the `--import-har` session (requests=1).
+
+macOS bundle `ScrapeLens.app` (version 0.1.3, signed `ScrapeLens Local Signing`, designated requirement
+root `d0a53befa59a447043abc9e58a3381addbbf1751`). Archive `ScrapeLens-0.1.3-macos-arm64-mcp.zip`
+(8,717,136 bytes), SHA-256 `42c93f87732b425aec4401dcde1de810334a1e203e6cc9bf1fa4d662223a5328`. Executable
+`Contents/MacOS/scrapelens` (25,929,040 bytes), SHA-256 `52dce2e5ef5f9297650ae04067de26b8b09b12b8daea840fdc777223516a4567`.
+`codesign --verify --deep --strict` passes on the bundle and on the zip extracted with `ditto`; the
+extracted executable is identical.
+
+Linux packages, arm64: `ScrapeLens_0.1.3_arm64.deb` SHA-256
+`1f92c9b69798b9dcde114948aa75becd3a21a1cbad69e4ea562de334414f6431`; `ScrapeLens_0.1.3_aarch64.AppImage`
+SHA-256 `1854efa034b1f0dce9e494ba30f5b37d9c327d9421c9dfb270bf8906a90bd9ae`; `scrapelens` (executable)
+SHA-256 `a722b67193a38e57a8375a65751b8c6caba3849d230d46bcb392517b42057188`.
+
+Where the executable is: `Contents/MacOS/scrapelens` in the `.app`; `/usr/bin/scrapelens` in the `.deb`;
+in the AppImage, `AppRun` runs `usr/bin/scrapelens` with the arguments it is given (checked by extracting
+the AppImage and by the proofs below). The clients run: macOS `…/ScrapeLens.app/Contents/MacOS/scrapelens mcp
+--sessions-dir <dir>`; Linux deb `/usr/bin/scrapelens mcp --sessions-dir <dir>`; AppImage
+`<file>.AppImage mcp --sessions-dir <dir>` (with `APPIMAGE_EXTRACT_AND_RUN=1` when FUSE is absent).
+
+Proof of `start_capture` with the packaged executables. A stdio JSON-RPC client declared no elicitation,
+so the server ran with `--allow-unconfirmed-capture`; `start_capture` used `headless: true` against a local
+origin on 127.0.0.1; every stdout line was parsed as JSON.
+- macOS, the bundled executable, Chrome stable: server `scrapelens-mcp` 0.1.3 with 15 tools;
+  `start_capture` returned a capture id; the status showed recording with 34 events; `stop_capture`
+  reported 3 requests, netlog complete and readable; server exit 0.
+- Debian 12 (arm64, Chromium 156, non-root user), `/usr/bin/scrapelens` from the `.deb`: the same
+  sequence, 39 events, readable, exit 0.
+- Debian 12, the AppImage: 38 events, readable, exit 0.
+Chromium needs `--security-opt seccomp=unconfined` and the `chromium-sandbox` package to start as a non-root
+user in a container without user namespaces; the product is unchanged.
+
+Release binaries: no test-only names in the macOS or Linux executables (`SCRAPELENS_TEST_MODE`,
+`SCRAPELENS_CDP_TRANSPORT`, `SCRAPELENS_TEST_PROXY_CA`, `--import-har`, `--open-capture`); `start_capture` is
+present. Not built here: amd64 packages.
+
+## macOS — release 0.1.3 (2026-11-06, superseded by the MCP subcommand build)
 
 Bundle candidate built from a clean export of `4d93997` (`main`, includes `c106a65` in
 `capture`: quiet a relay socket its user no longer holds). The product version is 0.1.3
