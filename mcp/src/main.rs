@@ -1,17 +1,4 @@
-use std::sync::Arc;
-
-use scrapelens_mcp::live::RealBackend;
-
-#[tokio::main]
-async fn main() {
-    scrapelens_mcp::harden::harden_process();
-    let config = match scrapelens_mcp::cli::parse_args(std::env::args().skip(1).collect()) {
-        Ok(config) => config,
-        Err(message) => {
-            eprintln!("{message}");
-            std::process::exit(2);
-        }
-    };
-    let code = scrapelens_mcp::app::run(config, Arc::new(RealBackend)).await;
-    std::process::exit(code);
+fn main() {
+    let args = std::env::args().skip(1).collect();
+    std::process::exit(scrapelens_mcp::entry::run(args));
 }
