@@ -44,12 +44,22 @@ TLS **key log** and a **pcap**, both sensitive. The script never copies them
 into a session, an export or the repository. `*.pcap`, `*.keylog` and the default
 output names are in `.gitignore`.
 
-## Current limit (2026-11-06, macOS)
+## Result (2026-11-07, Debian trixie container)
 
-`tshark` is not installed on this machine (and Wireshark is not in
-`/Applications`), so the comparison has **not** been run. `tcpdump` 4.99.1 is
-available. The matrix was not updated: without a decoded QPACK order there is no
-proof. Install Wireshark/tshark with HTTP/3 support and run the command above.
+`Dockerfile.trixie` installs Chromium, tshark 4.4.19 and tcpdump. Running
+`run.sh` as root with `--cap-add NET_RAW --cap-add NET_ADMIN` produced a pcap,
+a key log and testserver's `h3.jsonl`; tshark exposed the decoded HTTP/3
+headers and the comparison returned:
+
+```
+MATCH: 17 header fields in QPACK order
+```
+
+The request is `GET /echo-order?case=calibration`; duplicates were not
+exercised in this run. The pcap/key log stayed outside the repository and were
+not exported. On macOS `tshark` is still absent, so the same command there
+records the limit instead. The matrix row for this run states exactly these two
+limits.
 
 ## Interpretation
 
@@ -58,5 +68,6 @@ proof. Install Wireshark/tshark with HTTP/3 support and run the command above.
 - `tshark` must expose the HTTP/3 header list; if it only exposes undecoded
   QPACK bytes, the script reports that limit. It never guesses the order from
   the NetLog or from CDP.
-- Do not edit `docs/02-fidelity-matrix.md` until this comparison produces a
-  saved pcap, key log (outside the repo), tshark output and a match/diff report.
+- The matrix row for this run is backed by a saved pcap, key log (outside the
+  repo), tshark PDML and the match above. A future run with duplicates must
+  update the row instead of reusing this one.

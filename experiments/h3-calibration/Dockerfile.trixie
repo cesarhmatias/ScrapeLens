@@ -1,0 +1,8 @@
+# Test-only image for the h3 QPACK calibration; not a product image.
+FROM debian:trixie
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates chromium tshark tcpdump python3 curl \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /work

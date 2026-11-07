@@ -19,10 +19,11 @@ def server_order(path: pathlib.Path) -> list[str]:
     if line is None:
         raise SystemExit(f"LIMIT: {path} is empty")
     record = json.loads(line)
+    headers = [pair[0] for pair in record.get("headers") or []]
+    if headers:
+        return [str(name) for name in headers]
     pseudo = [pair[0] for pair in record.get("pseudoheaders") or []]
-    names = record.get("header_names")
-    if names is None:
-        names = [pair[0] for pair in record.get("headers") or []]
+    names = record.get("header_names") or []
     return [str(name) for name in pseudo + list(names)]
 
 
@@ -35,6 +36,34 @@ def walk(value, key_path=""):
             yield from walk(item, key_path)
     elif isinstance(value, str):
         yield key_path, value
+
+
+def field_order_pdml(path: pathlib.Path) -> list[str]:
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError as error:
+        raise SystemExit(f"LIMIT: {path} is not PDML: {error}")
+    names: list[str] = []
+    started = False
+    for field in root.iter("field"):
+        if field.get("name") != "http3.header.header.name":
+            continue
+        name = field.get("show")
+        if not name:
+            continue
+        if name == ":method" and not started:
+            started = True
+        if not started:
+            continue
+        if name == ":status":
+            break
+        names.append(name)
+    if not names:
+        raise SystemExit(
+            "LIMIT: tshark PDML did not expose the decoded HTTP/3 header list"
+        )
+    return names
 
 
 def field_order(path: pathlib.Path) -> list[str]:
@@ -70,10 +99,13 @@ def field_order(path: pathlib.Path) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--server", required=True, type=pathlib.Path)
-    parser.add_argument("--tshark", required=True, type=pathlib.Path)
+    parser.add_argument("--tshark", type=pathlib.Path)
+    parser.add_argument("--pdml", type=pathlib.Path)
     args = parser.parse_args()
+    if not args.tshark and not args.pdml:
+        raise SystemExit("one of --tshark or --pdml is required")
     expected = server_order(args.server)
-    actual = field_order(args.tshark)
+    actual = field_order_pdml(args.pdml) if args.pdml else field_order(args.tshark)
     if actual == expected:
         print(f"MATCH: {len(actual)} header fields in QPACK order")
         return 0

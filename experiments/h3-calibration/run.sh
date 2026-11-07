@@ -22,9 +22,13 @@ rm -f "$OUT/h3.pcap" "$OUT/keys.log" "$OUT/tshark.json" "$OUT/h3.jsonl"
 SERVER_PID=""
 CAP_PID=""
 cleanup() {
-  [ -n "$CAP_PID" ] && kill "$CAP_PID" 2>/dev/null || true
-  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
-  wait 2>/dev/null || true
+  for pid in "$CAP_PID" "$SERVER_PID"; do
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+  done
+  sleep 1
+  for pid in "$CAP_PID" "$SERVER_PID"; do
+    [ -n "$pid" ] && kill -9 "$pid" 2>/dev/null || true
+  done
 }
 trap cleanup EXIT INT TERM
 
@@ -47,12 +51,16 @@ if ! kill -0 "$CAP_PID" 2>/dev/null; then
 fi
 
 PROFILE=$(mktemp -d "${TMPDIR:-/tmp}/sl-h3cal.XXXXXX")
-"$CHROME" \
+SPKI=$(sed -n 's/.*spki-list=//p' "$OUT/server.stdout" | head -1)
+timeout 25 "$CHROME" \
   --headless=new \
+  --no-sandbox \
+  --enable-quic \
+  --ignore-certificate-errors-spki-list="$SPKI" \
+  --virtual-time-budget=5000 \
   --user-data-dir="$PROFILE" \
   --ssl-key-log-file="$OUT/keys.log" \
   --origin-to-force-quic-on=127.0.0.1:8783 \
-  --ignore-certificate-errors \
   --no-first-run --no-default-browser-check \
   --disable-background-networking --disable-component-update --disable-sync \
   --disable-default-apps --disable-extensions \
@@ -61,15 +69,16 @@ PROFILE=$(mktemp -d "${TMPDIR:-/tmp}/sl-h3cal.XXXXXX")
   >"$OUT/chrome.stdout" 2>"$OUT/chrome.stderr" || true
 sleep 1
 kill "$CAP_PID" 2>/dev/null || true
+wait "$CAP_PID" 2>/dev/null || true
 CAP_PID=""
-wait 2>/dev/null || true
 rm -rf "$PROFILE"
 
 [ -s "$OUT/keys.log" ] || { echo "LIMIT: Chrome wrote no key log" >&2; exit 3; }
 [ -s "$OUT/h3.pcap" ] || { echo "LIMIT: tcpdump wrote no pcap" >&2; exit 3; }
 
+# PDML preserves repeated header fields; the JSON writer collapses same-named keys.
 tshark -r "$OUT/h3.pcap" -o "tls.keylog_file:$OUT/keys.log" \
-  -Y http3 -T json >"$OUT/tshark.json" 2>"$OUT/tshark.stderr" || true
+  -Y http3 -T pdml >"$OUT/tshark.pdml" 2>"$OUT/tshark.stderr" || true
 cp "$OUT/server/h3cal/h3.jsonl" "$OUT/h3.jsonl" 2>/dev/null || true
-python3 "$HERE/compare_qpack.py" --server "$OUT/h3.jsonl" --tshark "$OUT/tshark.json"
+python3 "$HERE/compare_qpack.py" --server "$OUT/h3.jsonl" --pdml "$OUT/tshark.pdml"
 echo "OK: output in $OUT (keep the key log and pcap out of the repository and exports)"
