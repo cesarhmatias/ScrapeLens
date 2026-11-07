@@ -334,7 +334,12 @@ fn in_tree(
                 return Err(UNCONFIRMED);
             }
             // No generation finished in time: one direct look at the owner tree answers
-            // this connection instead of another wait.
+            // this connection instead of another wait. It runs under a permit, like the
+            // other process-table checks: without one the connection is refused BUSY and
+            // does not add another full table read (review-013c M-A).
+            let Some(_permit) = Gate::try_acquire(&peers.post_miss) else {
+                return Err(BUSY);
+            };
             return match direct(owner, client, listen, window) {
                 Ok(true) => Ok(()),
                 Ok(false) => Err(last),
@@ -354,6 +359,9 @@ fn in_tree(
     if last == UNCONFIRMED {
         // No complete generation was read. One direct look can still answer this
         // connection, instead of refusing it on a view that could not be trusted.
+        let Some(_permit) = Gate::try_acquire(&peers.post_miss) else {
+            return Err(BUSY);
+        };
         return match direct(owner, client, listen, window) {
             Ok(true) => Ok(()),
             Ok(false) | Err(()) => Err(UNCONFIRMED),
@@ -514,13 +522,32 @@ mod linux {
     struct Row {
         local: SocketAddr,
         remote: SocketAddr,
-        uid: u32,
         inode: u64,
     }
 
     /// The established rows of both tables. A row with a field that does not parse is skipped.
     /// ESTABLISHED, or FIN_WAIT after the client half-closes and keeps reading. TIME_WAIT has no
     /// process and is not listed.
+    fn parse_row(line: &str) -> Option<Row> {
+        let mut cols = line.split_whitespace();
+        let _index = cols.next();
+        let (Some(local), Some(remote), Some(state)) = (cols.next(), cols.next(), cols.next()) else {
+            return None;
+        };
+        if !matches!(state, "01" | "04" | "05") {
+            return None;
+        }
+        let (local, remote) = (socket_addr(local)?, socket_addr(remote)?);
+        // tx_queue:rx_queue, tr:tm, retrnsmt, uid, timeout, inode.
+        let _tx = cols.next()?;
+        let _tr = cols.next()?;
+        let _retrnsmt = cols.next()?;
+        let _uid = cols.next()?.parse::<u32>().ok()?;
+        let _timeout = cols.next()?;
+        let inode = cols.next()?.parse::<u64>().ok()?;
+        Some(Row { local, remote, inode })
+    }
+
     fn tcp_rows() -> Result<Vec<Row>, ()> {
         let mut rows = Vec::new();
         for path in ["/proc/net/tcp", "/proc/net/tcp6"] {
@@ -529,23 +556,7 @@ mod linux {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
                 Err(_) => return Err(()),
             };
-            for line in text.lines().skip(1) {
-                let mut cols = line.split_whitespace();
-                let _index = cols.next();
-                let (Some(local), Some(remote), Some(state)) = (cols.next(), cols.next(), cols.next()) else {
-                    continue;
-                };
-                if !matches!(state, "01" | "04" | "05") {
-                    continue;
-                }
-                let (Some(local), Some(remote)) = (socket_addr(local), socket_addr(remote)) else {
-                    continue;
-                };
-                // tx_queue:rx_queue, tr:tm, retrnsmt, uid, timeout, inode.
-                let Some(uid) = cols.nth(3).and_then(|text| text.parse::<u32>().ok()) else { continue };
-                let Some(inode) = cols.nth(1).and_then(|text| text.parse::<u64>().ok()) else { continue };
-                rows.push(Row { local, remote, uid, inode });
-            }
+            rows.extend(text.lines().skip(1).filter_map(parse_row));
         }
         Ok(rows)
     }
@@ -590,28 +601,31 @@ mod linux {
     /// The client socket is the established row whose local side is the client's address
     /// and port, and whose remote side is the relay's. A row must match the whole connection.
     fn client_once(client: SocketAddr, listen: SocketAddr) -> Result<Option<ClientSocket>, ()> {
+        use std::io::BufRead;
         let local = SocketAddr::new(canonical(client.ip()), client.port());
         let remote = SocketAddr::new(canonical(listen.ip()), listen.port());
-        let mut found: Option<ClientSocket> = None;
-        for row in tcp_rows()? {
-            if row.local != local || row.remote != remote {
-                continue;
-            }
-            // A torn or shifting snapshot can repeat one socket. The same inode is one match.
-            // Two inodes, or two uids, on one connection means the table moved.
-            match found {
-                Some(previous) if previous.inode != row.inode || previous.uid != row.uid => return Err(()),
-                Some(_) => {}
-                None => found = Some(ClientSocket { inode: row.inode, uid: row.uid }),
+        for path in ["/proc/net/tcp", "/proc/net/tcp6"] {
+            let file = match std::fs::File::open(path) {
+                Ok(file) => file,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(_) => return Err(()),
+            };
+            // Stream the rows and stop at the match: a 60k-socket table under flood must
+            // not be read whole for every direct look (review-013c M-A).
+            for line in std::io::BufReader::new(file).lines() {
+                let line = line.map_err(|_| ())?;
+                let Some(row) = parse_row(&line) else { continue };
+                if row.local == local && row.remote == remote {
+                    return Ok(Some(ClientSocket { inode: row.inode }));
+                }
             }
         }
-        Ok(found)
+        Ok(None)
     }
 
     #[derive(Clone, Copy)]
     struct ClientSocket {
         inode: u64,
-        uid: u32,
     }
 
     /// One `/proc/net/tcp` address: 8 hex digits (IPv4) or 32 (IPv6). Each 32-bit word
