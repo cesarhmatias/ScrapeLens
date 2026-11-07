@@ -117,8 +117,8 @@ envelope for compatibility.
   neither done nor tested; the machine is Apple Silicon (arm64). Compiled architectures ≠ tested.
 - The body preview of real sessions is loaded by `read_attachment` (1 MiB
   limit); binaries are not converted to text.
-- The launcher does not pass `--remote-allow-origins`. CDP uses the pipe by default; only
-  `SCRAPELENS_CDP_TRANSPORT=port` opens an ephemeral port on `127.0.0.1` during capture,
-  and that mode accepts clients without `Origin`. Do not browse untrusted pages in the
-  inspected Chrome while recording.
+- The launcher does not pass `--remote-allow-origins`. Release builds use the CDP pipe and
+  open no debugging port. `SCRAPELENS_CDP_TRANSPORT=port` is read only with the `test-hooks`
+  feature; it opens an ephemeral port on `127.0.0.1` during capture, and that mode accepts
+  clients without `Origin`.
 - No telemetry, no network at runtime.

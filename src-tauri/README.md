@@ -58,9 +58,9 @@ pending      true when core/ has not run this step yet
 
 ## Known limitations
 
-- The launcher does not pass `--remote-allow-origins`. By default CDP uses the pipe
-  (`--remote-debugging-pipe`), with no port. Only with `SCRAPELENS_CDP_TRANSPORT=port`
-  does Chrome open `--remote-debugging-port=0` on `127.0.0.1`. In that mode a client
+- The launcher does not pass `--remote-allow-origins`. Release builds use the CDP pipe
+  (`--remote-debugging-pipe`), with no port. Only builds with the `test-hooks` feature read
+  `SCRAPELENS_CDP_TRANSPORT`; with `port`, Chrome opens `--remote-debugging-port=0` on `127.0.0.1`. In that mode a client
   that sends no `Origin` is accepted during the capture; the launcher's comment
   (`capture/src/launcher.rs`) says Chrome refuses a WebSocket that carries an `Origin`
   without that flag. The exposure is limited to loopback, the random port and the

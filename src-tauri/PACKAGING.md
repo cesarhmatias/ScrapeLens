@@ -160,6 +160,5 @@ The browsers the App accepts on Linux are listed in [`linux/BROWSERS.md`](linux/
 - macOS arm64 only. Intel is neither built nor tested.
 - The save-panel flow of the macOS app is checked by hand, not by automated tests (see
   [`tests/results/exportacao`](../tests/results/exportacao)).
-- The launcher does not pass `--remote-allow-origins`. CDP uses the pipe by default; only
-  `SCRAPELENS_CDP_TRANSPORT=port` opens `127.0.0.1` on an ephemeral port, during the capture
-  (see [`capture/src/launcher.rs`](../capture/src/launcher.rs)).
+- The launcher does not pass `--remote-allow-origins`. Release builds use the CDP pipe and open no debugging
+  port; `SCRAPELENS_CDP_TRANSPORT=port` is read only with the `test-hooks` feature (see [`capture/src/launcher.rs`](../capture/src/launcher.rs)).

@@ -20,7 +20,7 @@ Rust core) for inspecting the real header sequence of HTTP sessions.
 ## Development requirements
 
 - macOS (arm64 is the built and tested architecture; Intel has not been validated).
-- Xcode Command Line Tools, stable Rust (1.80+), Node.js 20+.
+- Xcode Command Line Tools, stable Rust (1.88+), Node.js 20+.
 - Google Chrome/Chromium installed for real capture (the app uses a
   temporary dedicated profile; never the personal profile).
 - The end user does **not** install Node, Python or Rust: the app is a single
@@ -98,8 +98,8 @@ owned by others must be agreed on the project channel.
   with the self-signed identity `ScrapeLens Local Signing`, not Developer ID, and is **not
   notarized**; the project does not plan Developer ID signing or notarization.
 - Known limitations that must not regress: the launcher must not pass
-  `--remote-allow-origins` (CDP stays on the pipe by default; `SCRAPELENS_CDP_TRANSPORT=port`
-  opens loopback only, during capture, and accepts clients without `Origin`); no validated
+  `--remote-allow-origins` (release builds use the CDP pipe and open no debugging port;
+  `SCRAPELENS_CDP_TRANSPORT=port` is read only with the `test-hooks` feature); no validated
   Intel build.
 - **Published history is not rewritten.** Do not force-push to `main`. The only
   exception is removing a real secret, and only with the maintainer's approval.
