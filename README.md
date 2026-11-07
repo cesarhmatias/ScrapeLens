@@ -88,7 +88,12 @@ open target/release/bundle/macos/ScrapeLens.app
    - Optionally enter the **Start URL** and, if you want to start already logged in, select the source browser in the **Cookies** menu (or keep `No cookies (clean session)`).
    - Click **Start session**. ScrapeLens will open an isolated Chrome instance with a temporary profile (`0700`).
    - Run the desired flow in the browser and click **Stop** in ScrapeLens.
-   - **macOS Keychain prompt:** the first time cookies are imported from a browser, macOS asks to allow access to that browser's *Safe Storage* key. Click **Allow**, not **Always Allow**: *Always Allow* gives the `security` tool permanent access, so any program that runs it can read the key. <!-- Remove this note when Keychain access moves into ScrapeLens itself (T09). -->
+   - **macOS Keychain prompt:** the first time cookies are imported from a browser, macOS asks whether ScrapeLens may read that browser's *Safe Storage* key. The prompt names ScrapeLens. Click **Allow** to import; if you refuse, the import reports that the key was refused. Whether a choice of **Always Allow** carries over to a later ScrapeLens version has not been measured yet. With ad-hoc signing, expect the prompt again after an update.
+   - **Remove the older `security` access (macOS):** versions before this one read the key through the `security` tool, so that tool may still be allowed on the key. To remove it for Chrome, Brave, Edge or Arc:
+     1. Open **Keychain Access**, select the **login** keychain and search for the browser's item: `Chrome Safe Storage`, `Brave Safe Storage`, `Microsoft Edge Safe Storage` or `Arc Safe Storage` (`Chromium Safe Storage` for Chromium).
+     2. Double-click the item and open the **Access Control** tab.
+     3. In the list of applications, select `security` (`/usr/bin/security`) and click **–**.
+     4. Click **Save Changes** and enter your Mac password if asked. Repeat for each browser you use.
 2. **Open or Import** (`⌘O`):
    - Open a native session folder (`session.json`) with **Open capture…**, or import **HAR** and **NetLog** files with the dedicated **HAR** and **NetLog** buttons in the top bar.
 3. **Inspect and Search**:

@@ -159,6 +159,8 @@ jobs:
           - Linux packages: not signed (checksums and attestation only).
           - macOS .app: ad-hoc signature only. Not signed with a Developer ID certificate and not notarized. Gatekeeper may block it on download; the README explains how to open it.
 
+          Keychain access (macOS): cookie import reads the browser's Safe Storage key with ScrapeLens, so the macOS prompt names ScrapeLens. Earlier versions read it through the security tool. To remove that access for Chrome, Brave, Edge or Arc: open Keychain Access, find "<Browser> Safe Storage" in the login keychain, open its Access Control tab, select security (/usr/bin/security), click the minus button, then Save Changes. The README has the steps.
+
           Test-only code: not included. The release gate checked the shipped binaries for the test variables.
           Validation: build.sh tests, clippy and smoke ran in the pinned container on each architecture.
           NOTES
