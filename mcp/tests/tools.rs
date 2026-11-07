@@ -1391,3 +1391,100 @@ fn export_session_refuses_unsafe_destinations() {
         "not_found"
     );
 }
+
+// ---- export_session: HIGH 2 race (review 013) ------------------------------
+
+fn remove_any(path: &std::path::Path) {
+    match std::fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => {
+            let _ = std::fs::remove_file(path);
+        }
+        Ok(_) => {
+            let _ = std::fs::remove_dir_all(path);
+        }
+        Err(_) => {}
+    }
+}
+
+/// HIGH 2 (review 013) through the MCP export front door: the destination
+/// directory is swapped for a symlink while `export_session` writes. The full
+/// export (`include_sensitive`) writes the bundle through
+/// `store::write_session_dir`; nothing may land in the link target.
+#[test]
+fn export_session_race_never_writes_through_a_swapped_destination() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    let mut env = Env::new(false);
+    let id = env.import_flow("flow", "");
+    env.ctx.cfg.allow_sensitive_export = true;
+    let out_dir = env.ctx.cfg.out_dir.clone();
+    let outside = env.dir.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+
+    let mut ok = 0usize;
+    for index in 0..40usize {
+        let name = format!("race-{index}");
+        let dest = out_dir.join(&name);
+        let stop = Arc::new(AtomicBool::new(false));
+        let handle = {
+            let stop = stop.clone();
+            let name = dest.clone();
+            let target = outside.clone();
+            std::thread::spawn(move || {
+                let hold = name.with_extension("hold");
+                let mut real_at_name = true;
+                while !stop.load(Ordering::Relaxed) {
+                    if real_at_name {
+                        if std::fs::rename(&name, &hold).is_ok() {
+                            if std::os::unix::fs::symlink(&target, &name).is_ok() {
+                                real_at_name = false;
+                            } else {
+                                remove_any(&name);
+                                let _ = std::fs::rename(&hold, &name);
+                            }
+                        }
+                    } else {
+                        remove_any(&name);
+                        if std::fs::rename(&hold, &name).is_ok() {
+                            real_at_name = true;
+                        }
+                    }
+                    std::hint::spin_loop();
+                }
+                if !real_at_name {
+                    remove_any(&name);
+                    let _ = std::fs::rename(&hold, &name);
+                }
+            })
+        };
+        let result = export_session(
+            &env.ctx,
+            p(json!({
+                "session_id": id,
+                "destination": name,
+                "include_sensitive": true,
+            })),
+        );
+        if result.is_ok() {
+            ok += 1;
+        }
+        stop.store(true, Ordering::Relaxed);
+        handle.join().unwrap();
+        let entries: Vec<String> = std::fs::read_dir(&outside)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            entries.is_empty(),
+            "iteration {index}: the export wrote outside the destination: {entries:?}"
+        );
+        remove_any(&dest);
+        remove_any(&dest.with_extension("hold"));
+    }
+    assert!(ok > 0, "no export completed during the race");
+    assert!(
+        std::fs::read_dir(&outside).unwrap().next().is_none(),
+        "the link target received exported session files"
+    );
+}

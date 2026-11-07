@@ -3,7 +3,6 @@
 //! functions directly.
 
 use std::collections::HashSet;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use schemars::JsonSchema;
@@ -750,9 +749,6 @@ pub fn preview_sensitive_export(
 /// follow of a symlink. An existing symlink is refused and left in place. An
 /// existing file owned by someone else is refused and not truncated.
 fn write_private_bytes(path: &Path, bytes: &[u8]) -> Result<(), ToolError> {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -761,7 +757,9 @@ fn write_private_bytes(path: &Path, bytes: &[u8]) -> Result<(), ToolError> {
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| ToolError::invalid("destination has no final name"))?;
-    ensure_private_dir(parent).map_err(private_dir_error)?;
+    // Open the directory through the descriptor chain first: the write below is
+    // relative to THIS directory, so a later swap of the name cannot redirect it.
+    let dir = scrapelens_core::store::PrivateDir::open(parent).map_err(private_dir_error)?;
     match std::fs::symlink_metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(ToolError::new("io", format!("{}: {error}", path.display()))),
@@ -782,51 +780,8 @@ fn write_private_bytes(path: &Path, bytes: &[u8]) -> Result<(), ToolError> {
         }
         Ok(meta) => refuse_foreign_owner(path, parent, &meta)?,
     }
-
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let tmp = parent.join(format!(
-        ".{file_name}.tmp-{}-{nanos}-{}",
-        std::process::id(),
-        COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
-    let write = (|| -> Result<(), ToolError> {
-        let mut file = open_new_private(&tmp)?;
-        file.write_all(bytes)
-            .and_then(|()| file.sync_all())
-            .map_err(|error| ToolError::new("io", format!("{}: {error}", tmp.display())))?;
-        set_mode_0600(&tmp)?;
-        // The name may have become a symlink or a foreign file since the check.
-        match std::fs::symlink_metadata(path) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(ToolError::new("io", format!("{}: {error}", path.display()))),
-            Ok(meta) if meta.file_type().is_symlink() => {
-                return Err(ToolError::new(
-                    "outside_allowed_dir",
-                    format!("{} is a symbolic link; refused", path.display()),
-                ))
-            }
-            Ok(meta) if !meta.is_file() => {
-                return Err(ToolError::new(
-                    "invalid_argument",
-                    format!(
-                        "{} exists and is not a regular file; refused",
-                        path.display()
-                    ),
-                ))
-            }
-            Ok(meta) => refuse_foreign_owner(path, parent, &meta)?,
-        }
-        std::fs::rename(&tmp, path)
-            .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))?;
-        confirm_private_file(path, parent)
-    })();
-    if write.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    write
+    dir.write(file_name, bytes, true)
+        .map_err(|error| ToolError::new("io", error.to_string()))
 }
 
 fn private_dir_error(error: scrapelens_core::CoreError) -> ToolError {
@@ -866,52 +821,6 @@ fn refuse_foreign_owner(
     #[cfg(not(unix))]
     {
         let _ = (path, parent, meta);
-    }
-    Ok(())
-}
-
-fn open_new_private(path: &Path) -> Result<std::fs::File, ToolError> {
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
-    }
-    options
-        .open(path)
-        .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))
-}
-
-fn set_mode_0600(path: &Path) -> Result<(), ToolError> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-            .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))?;
-    }
-    Ok(())
-}
-
-fn confirm_private_file(path: &Path, parent: &Path) -> Result<(), ToolError> {
-    let meta = std::fs::symlink_metadata(path)
-        .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))?;
-    if meta.file_type().is_symlink() || !meta.is_file() {
-        return Err(ToolError::new(
-            "outside_allowed_dir",
-            format!("{} is not a regular private file; refused", path.display()),
-        ));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if meta.permissions().mode() & 0o777 != 0o600 {
-            return Err(ToolError::new(
-                "io",
-                format!("{} is not mode 0600; refused", path.display()),
-            ));
-        }
-        refuse_foreign_owner(path, parent, &meta)?;
     }
     Ok(())
 }
@@ -1341,23 +1250,6 @@ fn short_hash(text: &str) -> String {
     format!("{hash:08x}")
 }
 
-/// Creates `dir` (0700) without following symlinks: a component that is already a symlink is
-/// refused BEFORE any `mkdir`/`chmod`.
-fn private_dir_no_follow(dir: &Path) -> Result<(), ToolError> {
-    match std::fs::symlink_metadata(dir) {
-        Ok(meta) if meta.file_type().is_symlink() => Err(ToolError::new(
-            "outside_allowed_dir",
-            format!("{} is a symbolic link; refused", dir.display()),
-        )),
-        Ok(meta) if !meta.is_dir() => Err(ToolError::new(
-            "io",
-            format!("{} is not a directory", dir.display()),
-        )),
-        Ok(_) => Ok(ensure_private_dir(dir)?),
-        Err(_) => Ok(ensure_private_dir(dir)?),
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 fn spill(
     ctx: &Ctx,
@@ -1369,20 +1261,11 @@ fn spill(
     masked: bool,
     textual: bool,
 ) -> Result<PathBuf, ToolError> {
-    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let bodies = ctx.cfg.out_dir.join("bodies");
     let dir = bodies.join(format!("{}-{}", slug(handle), short_hash(handle)));
-    private_dir_no_follow(&bodies)?;
-    private_dir_no_follow(&dir)?;
-    let canonical = dir
-        .canonicalize()
-        .map_err(|error| ToolError::new("io", format!("{}: {error}", dir.display())))?;
-    if !is_within(&ctx.cfg.out_dir, &canonical) {
-        return Err(ToolError::new(
-            "outside_allowed_dir",
-            "destination outside --out-dir",
-        ));
-    }
+    // Walk the chain with O_NOFOLLOW once and write through the descriptor: a
+    // symlink planted at `dir` afterwards cannot redirect the spill outside.
+    let out = scrapelens_core::store::PrivateDir::open(&dir).map_err(private_dir_error)?;
     let file_name = format!(
         "{}-{}-{part}-{offset}-{}{}.{}",
         slug(request_id),
@@ -1391,48 +1274,9 @@ fn spill(
         if masked { ".masked" } else { "" },
         if textual { "txt" } else { "bin" }
     );
-    let path = canonical.join(file_name);
-    // Unique temporary name created with O_EXCL (`create_new`): if the name already
-    // exists, even as a symlink, the open fails instead of following the link.
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let tmp = canonical.join(format!(
-        ".tmp-{}-{nanos}-{}",
-        std::process::id(),
-        COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-    ));
-    let write = || -> Result<(), ToolError> {
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options
-            .open(&tmp)
-            .map_err(|error| ToolError::new("io", format!("{}: {error}", tmp.display())))?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            file.set_permissions(std::fs::Permissions::from_mode(0o600))
-                .map_err(|error| ToolError::new("io", error.to_string()))?;
-        }
-        file.write_all(bytes)
-            .and_then(|()| file.sync_all())
-            .map_err(|error| ToolError::new("io", error.to_string()))?;
-        // `rename` replaces the directory entry: if `path` is a symlink, the
-        // link itself is replaced, never the target.
-        std::fs::rename(&tmp, &path)
-            .map_err(|error| ToolError::new("io", format!("{}: {error}", path.display())))
-    };
-    let result = write();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&tmp);
-    }
-    result?;
+    let path = dir.join(&file_name);
+    out.write_replacing(&file_name, bytes, true)
+        .map_err(|error| ToolError::new("io", error.to_string()))?;
     Ok(path)
 }
 

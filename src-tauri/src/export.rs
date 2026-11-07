@@ -328,20 +328,14 @@ fn full_raw_artifacts(dir: &Path) -> Result<Vec<String>, String> {
     Ok(names)
 }
 
-fn copy_raw_private(src: &Path, dest: &Path) -> Result<(), String> {
-    use std::os::unix::fs::OpenOptionsExt;
-    let copy = || -> std::io::Result<()> {
-        let mut input = fs::OpenOptions::new().read(true)
-            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(src)?;
-        if !input.metadata()?.is_file() {
-            return Err(std::io::Error::other("raw artifact is not a regular file"));
-        }
-        let mut output = fs::OpenOptions::new().write(true).create_new(true).mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW).open(dest)?;
-        std::io::copy(&mut input, &mut output)?;
-        output.sync_all()
-    };
-    copy().map_err(|error| format!("failed to copy raw artifact {}: {error}", src.display()))
+fn copy_raw_private(src: &Path, dest_dir: &Path, name: &str) -> Result<(), String> {
+    // The destination is opened (0700, ours, no symlink in the chain) and the copy
+    // is written relative to that descriptor: a later swap of the name cannot
+    // redirect the raw artifact outside.
+    let out = store::PrivateDir::open(dest_dir)
+        .map_err(|error| format!("could not open {}: {error}", dest_dir.display()))?;
+    out.copy_from(name, src)
+        .map_err(|error| format!("failed to copy raw artifact {}: {error}", src.display()))
 }
 
 fn sanitized(dir: &Path) -> Result<(SessionBundle, SanitizedExport), String> {
@@ -473,7 +467,7 @@ pub fn sanitize_to_with_options(src: &Path, destination: &Path, include_sensitiv
             bundle.netlog_json = None;
             store::write_session_dir(&bundle, &dest_abs).map_err(|error| format!("could not write the full capture: {error}"))?;
             for name in raw {
-                copy_raw_private(&src_abs.join(&name), &dest_abs.join(&name))?;
+                copy_raw_private(&src_abs.join(&name), &dest_abs, &name)?;
             }
             return Ok(SanitizeSaved {
                 include_sensitive: true, attachments_written: bundle.attachments.len(),
