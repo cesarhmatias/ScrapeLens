@@ -16,6 +16,7 @@ pub mod cli_test;
 pub mod commands;
 pub mod cookie_import;
 pub mod export;
+pub mod grants;
 pub mod listing;
 pub mod menu;
 pub mod prefs;

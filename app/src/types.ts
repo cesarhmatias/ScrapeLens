@@ -250,6 +250,8 @@ export interface SessionRecord {
   notes?: string[];
   labels: string[];
   sourcePath?: string;
+  /** Token for the session folder (bodies, reveal); see `SessionPayload.sessionToken`. */
+  sourceToken?: string;
   attachments?: Record<string, string>;
   /** Total number of requests (in a paged session, `requests` stays empty). */
   requestCount: number;

@@ -14,12 +14,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 use scrapelens_core::{store, ImportedSession};
 
 use crate::capture::{self, CaptureConfig, CaptureSession, CaptureStatus};
 use crate::chrome::{self, ChromeInfo};
 use crate::cli;
+use crate::grants;
 #[cfg(feature = "test-hooks")]
 use crate::cli_test::CliAction;
 use crate::prefs;
@@ -31,6 +33,10 @@ use crate::AppState;
 pub struct SessionPayload {
     pub session: Value,
     pub session_dir: Option<String>,
+    /// Token for `session_dir`: what the webview passes back to read bodies or reveal the
+    /// folder. Absent for the demo. Issued by the backend (see `grants`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_token: Option<String>,
     pub synthetic: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notice: Option<String>,
@@ -86,6 +92,7 @@ pub fn demo_session() -> Result<SessionPayload, String> {
     Ok(SessionPayload {
         session,
         session_dir: None,
+        session_token: None,
         synthetic: true,
         notice: None,
         cookie_import: None,
@@ -93,18 +100,39 @@ pub fn demo_session() -> Result<SessionPayload, String> {
     })
 }
 
-/// Opens a real v1 session (a folder with session.json, or the file itself).
-/// This part already works and does not depend on the core to read the document.
+/// Opens a real v1 session (a folder with session.json, or the file itself). With a `token`
+/// (from an earlier payload, or a finished export), opens that session. Without one, the user
+/// picks the folder in the native dialog; cancelling returns `None`. The webview never supplies
+/// a path. This part already works and does not depend on the core to read the document.
 #[tauri::command]
-pub async fn open_session(app: AppHandle, path: String) -> Result<SessionPayload, String> {
-    run_loading(app, move |app| {
-        let payload = read_session_payload(&path)?;
+pub async fn open_session(app: AppHandle, token: Option<String>) -> Result<Option<SessionPayload>, String> {
+    let chosen = match token {
+        Some(token) => grants::resolve(&token, &[grants::Kind::Session])?,
+        None => {
+            let dialog_app = app.clone();
+            let picked = tauri::async_runtime::spawn_blocking(move || {
+                dialog_app.dialog().file().set_title("Open ScrapeLens session").blocking_pick_folder()
+            })
+            .await
+            .map_err(|error| format!("the dialog was interrupted: {error}"))?;
+            let Some(picked) = picked else {
+                return Ok(None);
+            };
+            picked
+                .into_path()
+                .map_err(|error| format!("the chosen location is not a folder: {error}"))?
+        }
+    };
+    let chosen = chosen.display().to_string();
+    let payload = run_loading(app, move |app| {
+        let payload = read_session_payload(&chosen)?;
         let state = app.state::<AppState>();
         *state.last_session_dir.lock().expect("session_dir lock") =
             payload.session_dir.as_ref().map(PathBuf::from);
         Ok(payload)
     })
-    .await
+    .await?;
+    Ok(Some(payload))
 }
 
 /// Sets an `AtomicBool` and clears it on exit (including on error or panic).
@@ -187,6 +215,7 @@ pub(crate) fn header_payload(
     Ok(SessionPayload {
         session: serde_json::to_value(&header).map_err(|error| format!("invalid header: {error}"))?,
         session_dir: Some(session_dir.display().to_string()),
+        session_token: Some(grants::issue(grants::Kind::Session, session_dir)?),
         synthetic,
         notice: Some(notice(requests, partial)),
         cookie_import: crate::cookie_import::read_report(session_dir),
@@ -465,6 +494,9 @@ pub struct CliActionPayload {
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// For `open-capture`: a session token, so the path stays in the backend.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
 }
 
 /// Consumes the test CLI action, or the CLI error/warning (at most once per process).
@@ -480,7 +512,7 @@ pub fn take_cli_action(_state: State<'_, AppState>) -> Option<CliActionPayload> 
 #[tauri::command]
 pub fn take_cli_action(state: State<'_, AppState>) -> Option<CliActionPayload> {
     if let Some((kind, message)) = state.cli_message.lock().ok()?.take() {
-        return Some(CliActionPayload { kind, path: String::new(), message: Some(message) });
+        return Some(CliActionPayload { kind, path: String::new(), message: Some(message), token: None });
     }
     let action = state.pending_cli.lock().ok()?.take()?;
     let (kind, path) = match action {
@@ -488,7 +520,13 @@ pub fn take_cli_action(state: State<'_, AppState>) -> Option<CliActionPayload> {
         CliAction::ImportNetlog(path) => ("import-netlog", path),
         CliAction::OpenCapture(path) => ("open-capture", path),
     };
-    Some(CliActionPayload { kind: kind.to_string(), path: path.display().to_string(), message: None })
+    if kind == "open-capture" {
+        return Some(match grants::issue(grants::Kind::Session, &path) {
+            Ok(token) => CliActionPayload { kind: kind.to_string(), path: String::new(), message: None, token: Some(token) },
+            Err(message) => CliActionPayload { kind: "error".to_string(), path: String::new(), message: Some(message), token: None },
+        });
+    }
+    Some(CliActionPayload { kind: kind.to_string(), path: path.display().to_string(), message: None, token: None })
 }
 
 #[derive(Debug, Serialize)]
@@ -754,6 +792,7 @@ pub fn start_session(
             "requests": []
         }),
         session_dir: Some(dir.display().to_string()),
+        session_token: Some(grants::issue(grants::Kind::Session, &dir)?),
         synthetic: false,
         notice: Some((if start_url_for_notice == "about:blank" {
             format!(
@@ -1074,8 +1113,14 @@ const HEX_PREVIEW_BYTES: usize = 256;
 
 /// Reads an attached body up to `limit` bytes. Text becomes a `String` (the front end
 /// shows it in `<pre>`); the rest becomes only a size and a hex preview.
+/// The session folder behind a session token; a path or another kind of token is refused.
+fn session_dir_for_token(token: &str) -> Result<String, String> {
+    Ok(grants::resolve(token, &[grants::Kind::Session])?.display().to_string())
+}
+
 #[tauri::command]
-pub async fn read_body(session_dir: String, name: String, limit: Option<u64>) -> Result<BodyPayload, String> {
+pub async fn read_body(session_token: String, name: String, limit: Option<u64>) -> Result<BodyPayload, String> {
+    let session_dir = session_dir_for_token(&session_token)?;
     tauri::async_runtime::spawn_blocking(move || read_body_blocking(&session_dir, &name, limit.unwrap_or(262_144)))
         .await
         .map_err(|error| format!("the read was interrupted: {error}"))?
@@ -1701,13 +1746,47 @@ pub async fn export_request(
     .map_err(|error| format!("generating the export failed: {error}"))?
 }
 
-/// Writes the exported text to a new file (0600), refusing overwrites and
-/// symbolic links. The path comes from the native save dialog.
+/// What the export returns: the file, and a token for `reveal_path`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedExport {
+    pub path: String,
+    pub bytes: u64,
+    pub token: String,
+}
+
+/// Writes the exported text to a new file (0600), refusing overwrites and symbolic links. The
+/// native save dialog is opened here, with the name the export proposes; cancelling returns `None`.
 #[tauri::command]
-pub async fn save_export_file(path: String, text: String) -> Result<crate::export::SavedFile, String> {
-    tauri::async_runtime::spawn_blocking(move || crate::export::write_text_file(Path::new(&path), &text))
+pub async fn save_export_file(app: AppHandle, default_name: String, text: String) -> Result<Option<SavedExport>, String> {
+    let (filter_name, extension) = if default_name.ends_with(".py") { ("Python", "py") } else { ("Shell", "sh") };
+    let dialog_name = default_name.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_title("Save export")
+            .set_file_name(dialog_name)
+            .add_filter(filter_name, &[extension])
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|error| format!("saving was interrupted: {error}"))?;
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
+    let target = picked
+        .into_path()
+        .map_err(|error| format!("the chosen location is not a file: {error}"))?;
+    tauri::async_runtime::spawn_blocking(move || finish_save(&target, &text).map(Some))
         .await
         .map_err(|error| format!("saving failed: {error}"))?
+}
+
+/// The file part of the save: write, then grant the file for `reveal_path`.
+fn finish_save(target: &Path, text: &str) -> Result<SavedExport, String> {
+    let saved = crate::export::write_text_file(target, text)?;
+    let token = grants::issue(grants::Kind::SavedFile, target)?;
+    Ok(SavedExport { path: saved.path, bytes: saved.bytes, token })
 }
 
 /// Sanitization counts and warnings, without writing anything.
@@ -1718,26 +1797,44 @@ pub async fn preview_sanitized(session_dir: String, include_sensitive: Option<bo
         .map_err(|error| format!("the sanitization preview failed: {error}"))?
 }
 
+/// What `save_sanitized` returns: the export's result, and a token for opening the new folder.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SanitizeSavedDto {
+    #[serde(flatten)]
+    pub saved: crate::export::SanitizeSaved,
+    pub token: String,
+}
+
 /// Writes the sanitized session to a new folder chosen by the user.
 #[tauri::command]
 pub async fn save_sanitized(
     session_dir: String,
     destination: String,
     include_sensitive: Option<bool>,
-) -> Result<crate::export::SanitizeSaved, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+) -> Result<SanitizeSavedDto, String> {
+    let saved = tauri::async_runtime::spawn_blocking(move || {
         crate::export::sanitize_to_with_options(Path::new(&session_dir), Path::new(&destination), include_sensitive.unwrap_or(false))
     })
     .await
-    .map_err(|error| format!("sanitization failed: {error}"))?
+    .map_err(|error| format!("sanitization failed: {error}"))??;
+    let token = grants::issue(grants::Kind::Session, Path::new(&saved.path))?;
+    Ok(SanitizeSavedDto { saved, token })
+}
+
+/// The path behind a reveal token, when it still exists. A path or another kind of token is
+/// refused before anything is started.
+fn reveal_target(token: &str) -> Result<PathBuf, String> {
+    let target = grants::resolve(token, &[grants::Kind::Session, grants::Kind::SavedFile])?;
+    if !target.exists() {
+        return Err(format!("not found: {}", target.display()));
+    }
+    Ok(target)
 }
 
 #[tauri::command]
-pub fn reveal_path(path: String) -> Result<(), String> {
-    let target = PathBuf::from(&path);
-    if !target.exists() {
-        return Err(format!("path not found: {path}"));
-    }
+pub fn reveal_path(token: String) -> Result<(), String> {
+    let target = reveal_target(&token)?;
     #[cfg(target_os = "macos")]
     {
         let status = if target.is_dir() {
@@ -2756,5 +2853,76 @@ mod cookie_source_tests {
         assert_eq!(resolve_cookie_source(Some("chrome:Default"), &sources).unwrap().unwrap().id, "chrome:Default");
         let json = serde_json::to_string(&sources).unwrap();
         assert!(!json.contains("dbPath") && !json.contains("cookie-database"));
+    }
+}
+
+/// T17: the webview gets paths back only as tokens the backend issued.
+#[cfg(test)]
+mod grant_tests {
+    use super::*;
+    use std::fs;
+
+    fn scratch(name: &str) -> PathBuf {
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let dir = std::fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!("sl-grant-{name}-{}-{nanos}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn read_body_refuses_a_path_and_takes_a_session_token() {
+        let dir = scratch("body");
+        fs::create_dir_all(dir.join("attachments")).unwrap();
+        fs::write(dir.join("attachments").join("t.txt"), b"hello").unwrap();
+        let token = grants::issue(grants::Kind::Session, &dir).unwrap();
+        // Without a token, a path is refused: the webview cannot name a folder.
+        assert!(session_dir_for_token(&dir.display().to_string()).is_err());
+        assert!(session_dir_for_token("not-a-token").is_err());
+        // Normal flow: the token gives the folder, and the body is read from it.
+        let folder = session_dir_for_token(&token).unwrap();
+        let body = read_body_blocking(&folder, "t.txt", 1000).unwrap();
+        assert_eq!(body.kind, "text");
+        assert_eq!(body.text.as_deref(), Some("hello"));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_file_token_does_not_read_a_session_body() {
+        let dir = scratch("kind");
+        let file = dir.join("export.sh");
+        let saved = finish_save(&file, "#!/bin/sh\n").unwrap();
+        assert!(session_dir_for_token(&saved.token).is_err());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn reveal_refuses_a_path_and_an_unknown_token_and_accepts_granted_ones() {
+        let dir = scratch("reveal");
+        let file = dir.join("a.txt");
+        // A path is refused before any program would be started.
+        assert!(reveal_target(&file.display().to_string()).is_err());
+        assert!(reveal_target(&dir.display().to_string()).is_err());
+        assert!(reveal_target("0123456789abcdef0123456789abcdef").is_err());
+        // Granted tokens resolve to the path, for the kind that is allowed.
+        let session = grants::issue(grants::Kind::Session, &dir).unwrap();
+        assert_eq!(reveal_target(&session).unwrap(), dir);
+        let saved = finish_save(&file, "x").unwrap();
+        assert_eq!(reveal_target(&saved.token).unwrap(), file);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_saved_export_is_granted_and_never_overwritten() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = scratch("save");
+        let target = dir.join("export.sh");
+        let saved = finish_save(&target, "#!/bin/sh\n").unwrap();
+        assert_eq!(saved.bytes, 10);
+        assert_eq!(reveal_target(&saved.token).unwrap(), target);
+        assert!(finish_save(&target, "again").is_err(), "an existing file is not overwritten");
+        assert_eq!(fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o600);
+        fs::remove_dir_all(&dir).ok();
     }
 }

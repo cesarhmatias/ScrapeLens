@@ -410,7 +410,7 @@ export function SanitizeDialog({
   const open = useCallback(async () => {
     if (!saved) return;
     try {
-      const payload = await bridge.openSessionAt(saved.path);
+      const payload = await bridge.openSessionAt(saved.token);
       onOpened(payload);
       onClose();
     } catch (reason) {
@@ -435,7 +435,7 @@ export function SanitizeDialog({
           </button>
           {saved ? (
             <>
-              <button className="btn" onClick={() => void bridge.revealPath(saved.path)}>
+              <button className="btn" onClick={() => void bridge.revealPath(saved.token)}>
                 Show in {FILE_MANAGER}
               </button>
               <button className="btn primary" onClick={() => void open()}>

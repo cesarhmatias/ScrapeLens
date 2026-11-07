@@ -502,7 +502,7 @@ export function sessionOrigin(labels: string[]): SessionOrigin {
 
 export function adaptSession(
   input: SessionV1,
-  options: { attachments?: Record<string, string>; sourcePath?: string } = {},
+  options: { attachments?: Record<string, string>; sourcePath?: string; sourceToken?: string } = {},
 ): AdaptedSession {
   const raw = normalizeSession(input);
   const synthetic = raw.session.labels?.includes("synthetic-fixture") ?? false;
@@ -646,6 +646,7 @@ export function adaptSession(
       notes: raw.session.notes,
       labels: raw.session.labels ?? [],
       sourcePath: options.sourcePath,
+      sourceToken: options.sourceToken,
       attachments: options.attachments,
       requestCount: (raw as SessionHeaderV1).requestCount ?? requests.length,
       paged: (raw as SessionHeaderV1).requestCount !== undefined,

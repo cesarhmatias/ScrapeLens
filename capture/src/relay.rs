@@ -14,7 +14,7 @@
 
 use std::fmt;
 use std::io::{self, Read, Write};
-use std::net::{Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Once};
 use std::thread::{self, JoinHandle};
@@ -155,7 +155,12 @@ pub struct Relay {
     peer_checks: Arc<AtomicU64>,
     peer_refused: Arc<AtomicU64>,
     peer_max_nanos: Arc<AtomicU64>,
+    #[cfg(test)]
+    lookup: Arc<Mutex<Option<LookupFn>>>,
 }
+
+#[cfg(test)]
+type LookupFn = Arc<dyn Fn(&str) -> io::Result<Vec<IpAddr>> + Send + Sync>;
 
 impl Relay {
     /// Starts the relay for `link`. `allow` of `None` means no allowlist: any destination.
@@ -206,6 +211,8 @@ impl Relay {
         let peer_checks = Arc::new(AtomicU64::new(0));
         let peer_refused = Arc::new(AtomicU64::new(0));
         let peer_max_nanos = Arc::new(AtomicU64::new(0));
+        #[cfg(test)]
+        let lookup = Arc::new(Mutex::new(None));
         let shared = Shared {
             link: Arc::new(link.clone()),
             allow,
@@ -220,6 +227,8 @@ impl Relay {
             peer_checks: Arc::clone(&peer_checks),
             peer_refused: Arc::clone(&peer_refused),
             peer_max_nanos: Arc::clone(&peer_max_nanos),
+            #[cfg(test)]
+            lookup: Arc::clone(&lookup),
         };
         #[cfg(not(test))]
         drop(client_limit);
@@ -241,7 +250,18 @@ impl Relay {
             peer_checks,
             peer_refused,
             peer_max_nanos,
+            #[cfg(test)]
+            lookup,
         })
+    }
+
+    /// Replaces name resolution for one relay. The system resolver is used when unset.
+    #[cfg(test)]
+    fn set_name_lookup<F>(&self, lookup: F)
+    where
+        F: Fn(&str) -> io::Result<Vec<IpAddr>> + Send + Sync + 'static,
+    {
+        *self.lookup.lock().expect("lookup") = Some(Arc::new(lookup));
     }
 
     /// The only process, with its descendants, allowed to open a tunnel.
@@ -315,6 +335,8 @@ struct Shared {
     peer_checks: Arc<AtomicU64>,
     peer_refused: Arc<AtomicU64>,
     peer_max_nanos: Arc<AtomicU64>,
+    #[cfg(test)]
+    lookup: Arc<Mutex<Option<LookupFn>>>,
 }
 
 /// One warning per reason. A repeat says how many times, and does not add a second warning.
@@ -551,6 +573,17 @@ fn handle_client(mut client: TcpStream, shared: Shared) {
             let _ = write_all_retry(&mut client, &[5, 2, 0, 1, 0, 0, 0, 0, 0, 0]);
             return;
         }
+        // `--host-resolver-rules` never sees the address the upstream proxy resolves.
+        // An allowlisted name that answers with a loopback or private address is refused.
+        // An allowlisted private IP literal is the host the user named, so it stays open.
+        if name_resolves_to_private(&target, &shared) {
+            shared.fail(format!(
+                "destination resolved to a private address and was refused: {}",
+                target.authority()
+            ));
+            let _ = write_all_retry(&mut client, &[5, 2, 0, 1, 0, 0, 0, 0, 0, 0]);
+            return;
+        }
     }
     let upstream = match dial_through(&shared.link, shared.tls.as_ref(), &target) {
         Ok(stream) => stream,
@@ -620,6 +653,68 @@ impl Destination {
             format!("{host}:{}", self.port)
         }
     }
+}
+
+/// True when an allowlisted name resolves to loopback or a private address.
+/// A destination whose own text is already that address is not a rebinding.
+fn name_resolves_to_private(dest: &Destination, shared: &Shared) -> bool {
+    if ip_literal_is_private(&dest.host()) {
+        return false;
+    }
+    let Ok(addrs) = lookup_name(&dest.host(), shared) else {
+        return false;
+    };
+    addrs.into_iter().any(ip_is_private_or_loopback)
+}
+
+fn ip_literal_is_private(host: &str) -> bool {
+    host.parse::<IpAddr>().is_ok_and(ip_is_private_or_loopback)
+}
+
+fn ip_is_private_or_loopback(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => v4_is_local(v4),
+        IpAddr::V6(v6) => {
+            if v6.is_loopback() || v6_is_unique_local(&v6) || v6_is_link_local(&v6) {
+                return true;
+            }
+            v6.to_ipv4_mapped().is_some_and(v4_is_local)
+        }
+    }
+}
+
+/// Loopback, RFC 1918, or IPv4 link-local. Written out so rustc 1.80 can build it.
+fn v4_is_local(ip: Ipv4Addr) -> bool {
+    if ip.is_loopback() {
+        return true;
+    }
+    let [a, b, _, _] = ip.octets();
+    a == 10 || (a == 172 && (b & 0xf0) == 16) || (a == 192 && b == 168) || (a == 169 && b == 254)
+}
+
+fn v6_is_unique_local(ip: &Ipv6Addr) -> bool {
+    (ip.octets()[0] & 0xfe) == 0xfc
+}
+
+fn v6_is_link_local(ip: &Ipv6Addr) -> bool {
+    let o = ip.octets();
+    o[0] == 0xfe && (o[1] & 0xc0) == 0x80
+}
+
+fn lookup_name(name: &str, shared: &Shared) -> io::Result<Vec<IpAddr>> {
+    #[cfg(test)]
+    if let Some(lookup) = shared.lookup.lock().ok().and_then(|guard| guard.clone()) {
+        return lookup(name);
+    }
+    #[cfg(not(test))]
+    let _ = shared;
+    let mut out = Vec::new();
+    for addr in (name, 0).to_socket_addrs()? {
+        if !out.contains(&addr.ip()) {
+            out.push(addr.ip());
+        }
+    }
+    Ok(out)
 }
 
 /// Reads the SOCKS5 greeting and CONNECT request from Chrome. Only no-auth and CONNECT.
@@ -1899,6 +1994,113 @@ mod wire_tests {
         tunnel.read_exact(&mut back).unwrap();
         assert_eq!(&back, b"ping");
         assert_eq!(seen.lock().unwrap()[0], "auth-ok");
+    }
+
+    /// Before the fix, this request returned SOCKS code 0 and the upstream log
+    /// contained `LINE localhost:<echo>` plus a `ping` echo. The allowlisted
+    /// name was forwarded, and the upstream resolved it to 127.0.0.1.
+    #[test]
+    fn an_allowlisted_localhost_name_is_refused_before_the_upstream() {
+        let echo = echo_server();
+        let (up, seen) = http_upstream(USER, PASSWORD);
+        let allow: AllowFn =
+            Arc::new(move |host: &str, port: u16| host == "localhost" && port == echo);
+        let relay = start(
+            &format!("http://{USER}:{PASSWORD}@127.0.0.1:{up}"),
+            Some(allow),
+        );
+        let (code, _tunnel) = chrome_request(relay.port(), 3, b"localhost", echo).unwrap();
+        assert_eq!(code, 2, "{:?}", relay.failures());
+        let failures = relay.failures();
+        assert!(
+            failures.iter().any(|f| f.contains("private address") && f.contains("localhost")),
+            "{failures:?}"
+        );
+        for failure in &failures {
+            assert!(!failure.contains("127.0.0.1"), "{failure}");
+        }
+        let log = seen.lock().unwrap().clone();
+        assert!(
+            log.iter().all(|line| !line.starts_with("LINE") && !line.starts_with("ATYP")),
+            "{log:?}"
+        );
+    }
+
+    /// `192.168.5.9` is injected. A public address beside it still refuses.
+    #[test]
+    fn an_allowlisted_name_resolving_to_192_168_is_refused_before_the_upstream() {
+        let echo = echo_server();
+        let (up, seen) = http_upstream(USER, PASSWORD);
+        let allow: AllowFn =
+            Arc::new(move |host: &str, port: u16| host == "rebind.example" && port == echo);
+        let relay = start(
+            &format!("http://{USER}:{PASSWORD}@127.0.0.1:{up}"),
+            Some(allow),
+        );
+        relay.set_name_lookup(|name| {
+            assert_eq!(name, "rebind.example");
+            Ok(vec![
+                "1.1.1.1".parse().unwrap(),
+                "192.168.5.9".parse().unwrap(),
+            ])
+        });
+        let (code, _tunnel) = chrome_request(relay.port(), 3, b"rebind.example", echo).unwrap();
+        assert_eq!(code, 2, "{:?}", relay.failures());
+        let failures = relay.failures();
+        assert!(
+            failures
+                .iter()
+                .any(|f| f.contains("private address") && f.contains("rebind.example")),
+            "{failures:?}"
+        );
+        for failure in &failures {
+            assert!(!failure.contains("192.168") && !failure.contains("1.1.1.1"), "{failure}");
+        }
+        let log = seen.lock().unwrap().clone();
+        assert!(log.iter().all(|line| !line.starts_with("LINE")), "{log:?}");
+    }
+
+    #[test]
+    fn an_allowlisted_private_ip_literal_still_tunnels() {
+        let echo = echo_server();
+        let (up, seen) = http_upstream(USER, PASSWORD);
+        let allow: AllowFn =
+            Arc::new(move |host: &str, port: u16| host == "127.0.0.1" && port == echo);
+        let relay = start(
+            &format!("http://{USER}:{PASSWORD}@127.0.0.1:{up}"),
+            Some(allow),
+        );
+        let (code, mut tunnel) = chrome_connect(relay.port(), echo);
+        assert_eq!(code, 0, "{:?}", relay.failures());
+        tunnel.write_all(b"ping").unwrap();
+        let mut back = [0u8; 4];
+        tunnel.read_exact(&mut back).unwrap();
+        assert_eq!(&back, b"ping");
+        let log = seen.lock().unwrap().clone();
+        assert!(log.iter().any(|line| line.starts_with("LINE 127.0.0.1:")), "{log:?}");
+    }
+
+    /// The injected answer is public, so the name is forwarded. The upstream
+    /// then resolves `localhost` itself and reaches the local echo.
+    #[test]
+    fn an_allowlisted_name_with_only_a_public_answer_is_forwarded() {
+        let echo = echo_server();
+        let (up, seen) = http_upstream(USER, PASSWORD);
+        let allow: AllowFn =
+            Arc::new(move |host: &str, port: u16| host == "localhost" && port == echo);
+        let relay = start(
+            &format!("http://{USER}:{PASSWORD}@127.0.0.1:{up}"),
+            Some(allow),
+        );
+        relay.set_name_lookup(|_| Ok(vec!["203.0.113.5".parse().unwrap()]));
+        let (code, mut tunnel) = chrome_request(relay.port(), 3, b"localhost", echo).unwrap();
+        assert_eq!(code, 0, "{:?}", relay.failures());
+        tunnel.write_all(b"ping").unwrap();
+        let mut back = [0u8; 4];
+        tunnel.read_exact(&mut back).unwrap();
+        assert_eq!(&back, b"ping");
+        let log = seen.lock().unwrap().clone();
+        assert!(log.iter().any(|line| line.starts_with("LINE localhost:")), "{log:?}");
     }
 
     #[test]

@@ -323,7 +323,7 @@ function BodyPanel({
   body,
   kind,
   onCopy,
-  sessionDir,
+  sessionToken,
   matches,
   highlightNeedle,
 }: {
@@ -331,7 +331,8 @@ function BodyPanel({
   body: BodyInfo;
   kind: "payload" | "response";
   onCopy?: (value: string, label: string) => void;
-  sessionDir?: string;
+  /** Token of the session folder; the bodies are read by token, never by path. */
+  sessionToken?: string;
   /** Core matches for this body (same scope and attempt). */
   matches?: SearchMatch[];
   highlightNeedle?: { text: string; caseSensitive: boolean };
@@ -341,16 +342,16 @@ function BodyPanel({
   useEffect(() => {
     setData(null);
     setLoadError(null);
-    if (!sessionDir || !body.attachment || body.preview) return;
+    if (!sessionToken || !body.attachment || body.preview) return;
     let alive = true;
     bridge
-      .readBody(sessionDir, body.attachment, PREVIEW_LIMIT)
+      .readBody(sessionToken, body.attachment, PREVIEW_LIMIT)
       .then((result) => alive && setData(result))
       .catch((error) => alive && setLoadError(String(error)));
     return () => {
       alive = false;
     };
-  }, [sessionDir, body.attachment, body.preview]);
+  }, [sessionToken, body.attachment, body.preview]);
 
   const transforms = classifyTransforms(body.transformed);
   const text = body.preview ?? (data?.kind === "text" ? data.text : undefined);
@@ -360,9 +361,9 @@ function BodyPanel({
   );
   const copyBody = async () => {
     if (body.preview !== undefined) return onCopy?.(body.preview, title);
-    if (!sessionDir || !body.attachment) return;
+    if (!sessionToken || !body.attachment) return;
     try {
-      const full = await bridge.readBody(sessionDir, body.attachment, COPY_LIMIT);
+      const full = await bridge.readBody(sessionToken, body.attachment, COPY_LIMIT);
       if (full.kind !== "text" || full.text === undefined) return;
       onCopy?.(full.text, full.cut ? `${title} (primeiros ${fmtBytes(full.shownBytes)})` : title);
     } catch (error) {
@@ -446,7 +447,7 @@ function BodyPanel({
           <br />
           {loadError}
         </div>
-      ) : body.attachment && sessionDir && !data ? (
+      ) : body.attachment && sessionToken && !data ? (
         <div className="empty">Loading body…</div>
       ) : body.availability === "empty" ? (
         <div className="empty">
@@ -1174,15 +1175,15 @@ function DetailView({
 
           {tab === "payload" && (
             <>
-              <BodyPanel title="Request payload" body={effectivePayload} kind="payload" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("requestBody", effectivePayload)} highlightNeedle={needle} />
+              <BodyPanel title="Request payload" body={effectivePayload} kind="payload" onCopy={onCopy} sessionToken={session.sourceToken} matches={bodyMatches("requestBody", effectivePayload)} highlightNeedle={needle} />
               <AdapterViewPanel sessionDir={session.sourcePath} requestId={req.id} side="request" />
               <BodyContext req={req} />
-              <BodyPanel title="Response body (reference)" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("responseBody", effectiveResponse)} highlightNeedle={needle} />
+              <BodyPanel title="Response body (reference)" body={effectiveResponse} kind="response" onCopy={onCopy} sessionToken={session.sourceToken} matches={bodyMatches("responseBody", effectiveResponse)} highlightNeedle={needle} />
             </>
           )}
           {tab === "response" && (
             <>
-              <BodyPanel title="Response body" body={effectiveResponse} kind="response" onCopy={onCopy} sessionDir={session.sourcePath} matches={bodyMatches("responseBody", effectiveResponse)} highlightNeedle={needle} />
+              <BodyPanel title="Response body" body={effectiveResponse} kind="response" onCopy={onCopy} sessionToken={session.sourceToken} matches={bodyMatches("responseBody", effectiveResponse)} highlightNeedle={needle} />
               <AdapterViewPanel sessionDir={session.sourcePath} requestId={req.id} side="response" />
               <BodyContext req={req} />
             </>
@@ -1792,6 +1793,7 @@ export default function App() {
       adaptSession(payload.session, {
         attachments: payload.synthetic ? (demoAttachments as Record<string, string>) : undefined,
         sourcePath: payload.sessionDir,
+        sourceToken: payload.sessionToken,
       }),
     );
     setView("session");
@@ -2057,7 +2059,7 @@ export default function App() {
             ? await bridge.importHarAt(action.path)
             : action.kind === "import-netlog"
               ? await bridge.importNetlogAt(action.path)
-              : await bridge.openSessionAt(action.path);
+              : await bridge.openSessionAt(action.token ?? "");
         if (!cancelled) applyPayload(payload);
       } catch (error) {
         if (!cancelled) {

@@ -24,6 +24,8 @@ import type { ProxyInfo, ProxyState } from "./proxyRules";
 export interface SessionPayload {
   session: SessionV1;
   sessionDir?: string;
+  /** Token for `sessionDir`: pass it back for bodies and reveal (the backend issues it). */
+  sessionToken?: string;
   synthetic: boolean;
   notice?: string;
   /** Cookie import of a live capture; absent when there was none or the capture is older. */
@@ -179,6 +181,8 @@ export interface AdapterViewDto {
 export interface SavedFile {
   path: string;
   bytes: number;
+  /** Token for `revealPath` (the backend issues it). */
+  token: string;
 }
 
 export interface RedactionCount {
@@ -205,6 +209,8 @@ export interface SanitizeSaved {
   includeSensitive?: boolean;
   rawArtifactsKept?: string[];
   path: string;
+  /** Token for `openSessionAt` and `revealPath` (the backend issues it). */
+  token: string;
   sessionId: string;
   requests: number;
   totalRedactions: number;
@@ -265,6 +271,8 @@ export type MenuAction =
 export interface CliActionPayload {
   kind: "import-har" | "import-netlog" | "open-capture" | "error" | "warning" | string;
   path: string;
+  /** For `open-capture`: a session token (the path stays in the backend). */
+  token?: string;
   /** Error or warning from the test CLI (kind `error`/`warning`). */
   message?: string;
 }
@@ -295,17 +303,10 @@ export const bridge = {
     return invoke("demo_session");
   },
 
-  /** Opens a v1 session directory (or a session.json) via the native dialog. */
+  /** Opens a v1 session folder chosen in the native dialog (the backend opens the dialog). */
   async pickAndOpenSession(): Promise<SessionPayload | null> {
     if (!isTauri()) return null;
-    const picked = await openDialog({
-      title: "Open ScrapeLens session",
-      message: "Choose the session folder (containing session.json) or the file itself.",
-      directory: true,
-      multiple: false,
-    });
-    if (!picked) return null;
-    return invoke("open_session", { path: picked });
+    return invoke("open_session");
   },
 
   async importHar(): Promise<SessionPayload | null> {
@@ -423,9 +424,10 @@ export const bridge = {
     return invoke("set_chrome_path", { path: picked });
   },
 
-  async revealPath(path: string): Promise<void> {
+  /** Shows a folder or file the backend issued a token for (see `grants`). */
+  async revealPath(token: string): Promise<void> {
     if (!isTauri()) return;
-    await invoke("reveal_path", { path });
+    await invoke("reveal_path", { token });
   },
 
   async readAttachment(sessionDir: string, name: string): Promise<{ kind: "text" | "binary"; text?: string; bytes: number }> {
@@ -443,13 +445,13 @@ export const bridge = {
   },
 
   /** Reads an attached body (text, or size + hex preview if binary). */
-  async readBody(sessionDir: string, name: string, limit?: number): Promise<BodyData> {
-    return invoke("read_body", { sessionDir, name, limit });
+  async readBody(sessionToken: string, name: string, limit?: number): Promise<BodyData> {
+    return invoke("read_body", { sessionToken, name, limit });
   },
 
-  /** Opens an already known session folder, without a dialog. */
-  async openSessionAt(path: string): Promise<SessionPayload> {
-    return invoke("open_session", { path });
+  /** Opens a session folder by the token the backend issued for it, without a dialog. */
+  async openSessionAt(token: string): Promise<SessionPayload> {
+    return invoke("open_session", { token });
   },
 
   /**
@@ -556,16 +558,10 @@ export const bridge = {
   },
 
 
-  /** Native save dialog + 0600 write without overwriting. */
+  /** The backend opens the native save dialog and writes 0600 without overwriting; `null` if cancelled. */
   async saveExport(defaultName: string, text: string): Promise<SavedFile | null> {
     if (!isTauri()) return null;
-    const picked = await saveDialog({
-      title: "Save export",
-      defaultPath: defaultName,
-      filters: [{ name: defaultName.endsWith(".py") ? "Python" : "Shell", extensions: [defaultName.endsWith(".py") ? "py" : "sh"] }],
-    });
-    if (!picked) return null;
-    return invoke("save_export_file", { path: picked, text });
+    return invoke("save_export_file", { defaultName, text });
   },
 
   /** Sanitization counts/warnings; writes nothing. */
