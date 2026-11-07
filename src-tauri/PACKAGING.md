@@ -4,20 +4,20 @@ Status of the package delivered in this round. It serves as reproducible evidenc
 the commands below produce exactly the artifact described, on the same machine and
 under the same conditions.
 
-## macOS — release 0.1.3 (2026-11-06, current)
+## macOS — release 0.1.3 (2026-11-06, current candidate)
 
-Version commit `ac35fbd` (`chore(release): bump ScrapeLens to 0.1.3`, on `main` over `41caac4`).
-The bundle is built from a clean export of that commit (`git archive`), with the product
-version 0.1.3 (`tauri.conf.json`, `src-tauri/Cargo.toml`, `app/package.json`). The `test-hooks`
-feature is off (default features).
+Bundle candidate built from a clean export of `4d93997` (`main`, includes `c106a65` in
+`capture`: quiet a relay socket its user no longer holds). The product version is 0.1.3
+(`tauri.conf.json`, `src-tauri/Cargo.toml`, `app/package.json`; version commit `ac35fbd`). The
+`test-hooks` feature is off (default features). It replaces the earlier candidate from `ac35fbd`.
 
 Bundle: `ScrapeLens.app` (version 0.1.3) under `sl-release-0.1.3/target/release/bundle/macos/`
 (outside the repository).
-SHA-256 of `Contents/MacOS/scrapelens` (20,090,880 bytes):
-`b3fa3b6e5cddadff33765327f837d5a1cf8674fe55a9457daf56cdc8a054dff1`.
+SHA-256 of `Contents/MacOS/scrapelens` (20,090,992 bytes):
+`740d985d637b3b661dc4af9daead0a9317dfdc01319ebc50625d9f990d3fc5c1`.
 Release archive: `~/OpenBot/Agents/agent-466e334c-b464-4294-a274-2a5e33a666b9/sl-release-0.1.3/macos/ScrapeLens-0.1.3-macos-arm64.zip`
-(6,964,803 bytes, `ditto -c -k --keepParent`), SHA-256
-`03d21fd7ffb87eeac95c81491cdc6b7dba210bc9364ccb383730b53fd11ffa1f`. Extracted to a
+(6,965,293 bytes, `ditto -c -k --keepParent`), SHA-256
+`4b3ef850aedb05b51d5011c7dca8e1d0a9b6aacacb013a36bfc2f11587842eb5`. Extracted to a
 temporary folder (then removed), the app passes `codesign --verify --deep --strict` and keeps the
 same executable hash. The bundle passes the same check.
 Signed with `ScrapeLens Local Signing`; designated requirement certificate root
@@ -31,7 +31,7 @@ or activated, and no running ScrapeLens instance was present.
 nor `--import-har` or `--open-capture`.
 Validation: `cargo test --locked` 84 passed, 0 failed, 8 ignored; `cargo clippy --locked
 --all-targets -- -D warnings` clean; `npm test`, typecheck and build passed.
-Linux packages for 0.1.3 are not built here; the README now names them, and they are the
+Linux packages for 0.1.3 are not built here; the README names them, and they are the
 Testes step.
 
 ## macOS — release 0.1.2 (2026-11-06, superseded by 0.1.3)
