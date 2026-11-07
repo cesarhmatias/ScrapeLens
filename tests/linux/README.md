@@ -21,7 +21,7 @@ the script's output folder has `host:` and `execution type:` in its first lines.
 - `.deb` and AppImage in `src-tauri/linux/out/` (read-only; copied to `~/artifacts-r14b/` on the machine,
   with SHA-256 checked on both sides before running).
 - `scrapelens-testserver` binary compiled for Linux (built inside the machine from `testserver/`),
-  in `~/scrapelens/testserver/target/release/`.
+  in `~/scrapelens/target/release/`.
 - Import fixtures: the versioned `experiments/results/h1-page/har-derived.json` and `chrome-netlog.json` (no `$HOME` dependency).
 
 ## Script

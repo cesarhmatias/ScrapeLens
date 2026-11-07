@@ -31,7 +31,7 @@ def main():
         path.write_bytes(data)
         path.chmod(0o600)
     for fmt, suffix in [('export-curl','sh'),('export-python','py')]:
-        output = subprocess.check_output([str(ROOT/'core/target/release/scrapelens-core'),fmt,str(SOURCE),'captured'])
+        output = subprocess.check_output([str(ROOT/'target/release/scrapelens-core'),fmt,str(SOURCE),'captured'])
         path=BASE/f'expected.{suffix}'
         path.write_bytes(output)
         path.chmod(0o600)

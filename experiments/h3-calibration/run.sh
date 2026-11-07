@@ -6,7 +6,7 @@ OUT=${1:?usage: run.sh <output-dir>}
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 CHROME=${CHROME:-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
-TS="$ROOT/testserver/target/debug/scrapelens-testserver"
+TS="$ROOT/target/debug/scrapelens-testserver"
 
 for tool in tshark tcpdump; do
   if ! command -v "$tool" >/dev/null 2>&1; then

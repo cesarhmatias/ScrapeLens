@@ -64,7 +64,7 @@ The packaged app does not require Node, Python or Rust.
 # at the repository root
 ./app/node_modules/.bin/tauri dev
 ./app/node_modules/.bin/tauri build --bundles app
-# output: src-tauri/target/release/bundle/macos/ScrapeLens.app
+# output: target/release/bundle/macos/ScrapeLens.app (root workspace target)
 ```
 
 Or through the scripts in `app/`:

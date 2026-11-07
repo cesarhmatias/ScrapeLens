@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Acceptance suite for the ScrapeLens MVP (the 10 criteria of the specification).
 
-Drives the core CLI (`core/target/release/scrapelens-core`) and the synthetic
+Drives the core CLI (`target/release/scrapelens-core`) and the synthetic
 fixtures in `fixtures/acceptance/`. No step opens the network: the servers and the
 Chrome of criterion 9 are local and orchestrated by `tests/capture/run-cycle.sh`.
 
@@ -32,7 +32,7 @@ import time
 import unicodedata
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-CORE = ROOT / "core" / "target" / "release" / "scrapelens-core"
+CORE = ROOT / "target" / "release" / "scrapelens-core"
 FIX = ROOT / "fixtures" / "acceptance"
 WORK = ROOT / "tests" / ".work"
 RESULTS = ROOT / "tests" / "results"
@@ -42,7 +42,7 @@ REPORT = ROOT / "tests" / "REPORT.md"
 # `src-tauri/PACKAGING.md`. A legitimate rebuild changes the hash: update both
 # places together, so the suite never approves an undocumented artifact.
 APP_EXECUTABLE = pathlib.Path(os.environ.get("SL_APP_EXECUTABLE") or (
-    pathlib.Path(__file__).resolve().parents[2] / "src-tauri/target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens"))
+    pathlib.Path(__file__).resolve().parents[2] / "target/release/bundle/macos/ScrapeLens.app/Contents/MacOS/scrapelens"))
 EXPECTED_APP_SHA256 = "2691f1528a6b5b6009d8cc29c049f1e500093d6aab9f2163bcc4aad60df18156"
 
 SECRETS = [
@@ -1405,7 +1405,7 @@ def main() -> int:
         subprocess.run([sys.executable, str(ROOT / "tests" / "acceptance" / "fixtures.py")], check=True)
 
     if not CORE.exists():
-        print(f"core binary missing: {CORE}\nrun: cd core && cargo build --release", file=sys.stderr)
+        print(f"core binary missing: {CORE}\nrun: cargo build --release -p scrapelens-core", file=sys.stderr)
         return 2
 
     last_capture = RESULTS / "last-capture.txt"

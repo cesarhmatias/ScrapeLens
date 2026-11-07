@@ -1,6 +1,6 @@
 # Reproducible ScrapeLens build for Linux (round 14).
 # Base pinned by digest (multi-architecture index of ubuntu:22.04), fixed Rust and Node,
-# dependencies pinned by the lockfiles (src-tauri/Cargo.lock, app/package-lock.json).
+# dependencies pinned by the root Cargo.lock of the workspace and app/package-lock.json.
 #   docker build --platform linux/amd64 -f src-tauri/linux/Dockerfile -t scrapelens-linux:amd64 .
 #   docker run --rm --platform linux/amd64 -v "$PWD/src-tauri/linux/out:/out" scrapelens-linux:amd64
 FROM ubuntu:22.04@sha256:076e7bf82319619f28dd0aa9c02ab34b055ad37100395b4f49a2ffba04fb5e11
@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
       libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev patchelf \
       python3 xvfb xauth dbus-x11 xdg-utils desktop-file-utils squashfs-tools \
+      cmake clang libclang-dev perl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain ${RUST_VERSION} -c clippy \
@@ -30,6 +31,7 @@ RUN set -eux; case "$(uname -m)" in x86_64) a=x64;; aarch64) a=arm64;; esac; \
     mkdir /opt/node && tar -xJf $f -C /opt/node --strip-components=1 && rm $f; node --version
 
 WORKDIR /src
+COPY Cargo.toml Cargo.lock ./
 COPY app/package.json app/package-lock.json app/
 RUN cd app && npm ci --no-audit --no-fund
 COPY core core
@@ -37,6 +39,11 @@ COPY capture capture
 COPY recon recon
 COPY mcp mcp
 COPY adapters adapters
+COPY testserver testserver
+COPY tests/export tests/export
+COPY experiments/session-memory experiments/session-memory
+COPY experiments/linux/shim experiments/linux/shim
+COPY experiments/results experiments/results
 COPY src-tauri src-tauri
 COPY app app
 COPY fixtures fixtures

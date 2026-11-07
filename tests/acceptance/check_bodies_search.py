@@ -28,7 +28,7 @@ def core_bin(arg):
     if arg:
         return arg
     # The most recent binary by mtime; refuses if it is older than the source code.
-    cands = [ROOT / "core" / "target" / p / "scrapelens-core" for p in ("release", "debug")]
+    cands = [ROOT / "target" / p / "scrapelens-core" for p in ("release", "debug")]
     cands = [c for c in cands if c.exists()]
     if not cands:
         sys.exit("scrapelens-core not found; run `cargo build` in core/ or use --core")

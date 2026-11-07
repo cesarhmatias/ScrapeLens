@@ -2,10 +2,11 @@
 **/node_modules
 **/dist
 src-tauri/linux/out
-tests
-experiments
 outputs
-testserver
 docs
 .git
 .idea
+experiments/.venv
+tests/.work
+tests/capture/runs
+tests/results

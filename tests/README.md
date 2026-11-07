@@ -1,6 +1,6 @@
 # tests/ — ScrapeLens MVP acceptance
 
-Suite that consumes the **core CLI** (`core/target/release/scrapelens-core`), the
+Suite that consumes the **core CLI** (`target/release/scrapelens-core`), the
 synthetic fixtures in `fixtures/acceptance/` and, for criterion 9, a real Chrome
 capture on macOS orchestrated by `tests/capture/run-cycle.sh`.
 
@@ -35,7 +35,7 @@ Results: `tests/results/acceptance.json` and the report `tests/REPORT.md`
 | `capture/runs/` | raw sessions of the real capture (not committed; regenerable) |
 
 Criterion 9 covers two legs: (a) the harness's own capture on h1/h2/h3 and
-(b) the packaged app (`src-tauri/target/release/bundle/macos/ScrapeLens.app`),
+(b) the packaged app (`target/release/bundle/macos/ScrapeLens.app`),
 with Start session/Stop through the UI, the session recorded by the app and real
 HAR/NetLog imports. The summary of leg (b) is in `tests/results/app-latest/run.json`;
 the harness reads it by default (or via `--app-run`).

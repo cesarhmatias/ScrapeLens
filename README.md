@@ -72,10 +72,10 @@ Download the pre-built binaries from the [**Releases**](https://github.com/cesar
 
 ### Running on macOS
 
-Unzip `ScrapeLens.app` (or use the bundle built at `src-tauri/target/release/bundle/macos/ScrapeLens.app`) and move it to `/Applications` or open it from the terminal:
+Unzip `ScrapeLens.app` (or use the bundle built at `target/release/bundle/macos/ScrapeLens.app`) and move it to `/Applications` or open it from the terminal:
 
 ```sh
-open src-tauri/target/release/bundle/macos/ScrapeLens.app
+open target/release/bundle/macos/ScrapeLens.app
 ```
 
 > **Note on signing:** The package uses local signing (`ScrapeLens Local Signing` / ad-hoc), without Apple notarization. If Gatekeeper blocks the first launch, run `xattr -dr com.apple.quarantine /Applications/ScrapeLens.app` or open it via secondary click → **Open**. Details and `SHA-256` hashes in [`src-tauri/PACKAGING.md`](src-tauri/PACKAGING.md).
@@ -242,12 +242,9 @@ npm --prefix app run typecheck
 npm --prefix app test
 npm --prefix app run build
 
-# 2. Run the Rust test suites
-cargo test --manifest-path core/Cargo.toml
-cargo test --manifest-path capture/Cargo.toml
-cargo test --manifest-path mcp/Cargo.toml
-cargo test --manifest-path src-tauri/Cargo.toml
-cargo test --manifest-path adapters/natural-ajax/Cargo.toml
+# 2. Run the Rust test suite (one workspace at the root, one Cargo.lock)
+cargo test
+cargo clippy --workspace --all-targets --exclude scrapelens-testserver -- -D warnings
 
 # 3. Run in development mode
 ./app/node_modules/.bin/tauri dev
@@ -260,10 +257,10 @@ To use the development CLI of `core` directly:
 
 ```sh
 cargo build --manifest-path core/Cargo.toml --release
-./core/target/release/scrapelens-core inspect /path/to/session
-./core/target/release/scrapelens-core export-curl /path/to/session cdp-r0001
-./core/target/release/scrapelens-core export-python /path/to/session cdp-r0001
-./core/target/release/scrapelens-core sanitize /path/to/session /path/to/sanitized-output
+./target/release/scrapelens-core inspect /path/to/session
+./target/release/scrapelens-core export-curl /path/to/session cdp-r0001
+./target/release/scrapelens-core export-python /path/to/session cdp-r0001
+./target/release/scrapelens-core sanitize /path/to/session /path/to/sanitized-output
 ```
 
 For contribution guidelines, see [`CONTRIBUTING.md`](CONTRIBUTING.md).

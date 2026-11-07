@@ -1,5 +1,7 @@
 # PR CI (T21): cargo test, clippy and npm test on Linux and macOS.
 # Runs on pull requests and on manual dispatch only. No release, no deploy, no secrets.
+# One workspace at the root (T19): every Rust job runs from the root with the root
+# Cargo.lock, instead of a per-crate matrix.
 name: PR CI
 
 on:
@@ -20,12 +22,8 @@ env:
 
 jobs:
   rust-linux:
-    name: Rust ${{ matrix.crate }} (Linux)
+    name: Rust workspace (Linux)
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        crate: [core, mcp, capture, recon, testserver, adapters/natural-ajax, src-tauri]
     steps:
       - uses: actions/checkout@v4
       - name: System packages
@@ -39,23 +37,16 @@ jobs:
         with:
           components: clippy
       - name: Test certificates (generated at test time, not tracked)
-        run: cargo run -q --locked --manifest-path testserver/Cargo.toml -- gen-cert
-      - name: cargo test
-        working-directory: ${{ matrix.crate }}
-        run: cargo test --locked
-      - name: cargo clippy
+        run: cargo run -q --locked -p scrapelens-testserver -- gen-cert
+      - name: cargo test (workspace)
+        run: cargo test --locked --workspace
+      - name: cargo clippy (workspace)
         # testserver is excluded: it has nine clippy findings, the testserver lints are an allowlisted exception.
-        if: matrix.crate != 'testserver'
-        working-directory: ${{ matrix.crate }}
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --exclude scrapelens-testserver -- -D warnings
 
   rust-macos:
-    name: Rust ${{ matrix.crate }} (macOS)
+    name: Rust workspace (macOS)
     runs-on: macos-14
-    strategy:
-      fail-fast: false
-      matrix:
-        crate: [core, mcp, capture, recon, testserver, adapters/natural-ajax, src-tauri]
     steps:
       - uses: actions/checkout@v4
       - name: System packages
@@ -64,15 +55,12 @@ jobs:
         with:
           components: clippy
       - name: Test certificates (generated at test time, not tracked)
-        run: cargo run -q --locked --manifest-path testserver/Cargo.toml -- gen-cert
-      - name: cargo test
-        working-directory: ${{ matrix.crate }}
-        run: cargo test --locked
-      - name: cargo clippy
+        run: cargo run -q --locked -p scrapelens-testserver -- gen-cert
+      - name: cargo test (workspace)
+        run: cargo test --locked --workspace
+      - name: cargo clippy (workspace)
         # testserver is excluded: it has nine clippy findings, the testserver lints are an allowlisted exception.
-        if: matrix.crate != 'testserver'
-        working-directory: ${{ matrix.crate }}
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets --exclude scrapelens-testserver -- -D warnings
 
   app-npm:
     name: App npm test (${{ matrix.os }})

@@ -131,7 +131,7 @@ macOS arm64, RSS peak by `getrusage`), on `/tmp/big20k` (`session.json` of 1.19 
 Reproduce:
 
 ```
-cd src-tauri && cargo build --release --example mem_open
+cargo build --release -p scrapelens --example mem_open
 ./target/release/examples/mem_open paged  /tmp/big20k
 ./target/release/examples/mem_open legacy /tmp/big20k
 ```

@@ -17,7 +17,7 @@ PROXY_KIND=${PROXY_KIND:-http}; EGRESS=${EGRESS:-0}
 HERE=$(cd "$(dirname "$0")" && pwd)
 ACC=$(cd "$HERE/.." && pwd)
 REPO=$(cd "$ACC/../../.." && pwd)
-TS="$REPO/testserver/target/debug/scrapelens-testserver"
+TS="$REPO/target/debug/scrapelens-testserver"
 USER=tester-synthetic; PASS='p@ss-w0rd!'; PCT='p%40ss-w0rd%21'
 PPORT=18731; OPORT=18781
 mkdir -p "$OUT"

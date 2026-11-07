@@ -29,22 +29,24 @@ Rust core) for inspecting the real header sequence of HTTP sessions.
 ## Commands
 
 All the commands below start from the repository root and are independent:
-each line indicates the directory in which it must be run.
+each line indicates the directory in which it must be run. The repository is one
+Cargo workspace (`Cargo.toml` at the root) with a single `Cargo.lock`; `target/`
+is shared by every crate.
 
 ```sh
 # UI dependencies (once)
 cd app && npm install
 
-# core tests
-cd core && cargo test --offline
+# workspace tests (all crates, one root Cargo.lock)
+cargo test --offline
 
-# Tauri shell tests
-cd src-tauri && cargo test
+# one crate only
+cargo test -p scrapelens-core --offline
 
 # app in development mode (from the root)
 ./app/node_modules/.bin/tauri dev
 
-# .app bundle (from the root; output goes to src-tauri/target/release/bundle/macos/)
+# .app bundle (from the root; output goes to target/release/bundle/macos/)
 ./app/node_modules/.bin/tauri build --bundles app
 ```
 
@@ -57,11 +59,10 @@ cd src-tauri && cargo test
 
 ```sh
 # 1. build and start the local h1 server (stays in the background)
-cd testserver && cargo build
+cargo build -p scrapelens-testserver
 ./target/debug/scrapelens-testserver serve --only h1 --h1 127.0.0.1:8781 &
 
-# 2. back at the root, start the app pointing at the test page
-cd .. 
+# 2. start the app pointing at the test page
 SCRAPELENS_CAPTURE_URL=http://127.0.0.1:8781/page \
   ./app/node_modules/.bin/tauri dev
 ```

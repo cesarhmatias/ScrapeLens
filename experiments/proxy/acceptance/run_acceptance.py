@@ -36,7 +36,7 @@ import urllib.parse
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[2]
-TESTSERVER = REPO / "testserver" / "target" / "debug" / "scrapelens-testserver"
+TESTSERVER = REPO / "target" / "debug" / "scrapelens-testserver"
 DRIVER = HERE / "driver" / "target" / "debug" / "proxy-acceptance-driver"
 
 USER = "tester-synthetic"

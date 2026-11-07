@@ -9,8 +9,8 @@ import argparse, json, os, random, subprocess, sys, tempfile, time, urllib.reque
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-NATURAL = ROOT / "adapters/natural-ajax/target/release/natural-core"
-CORE = ROOT / "core/target/release/scrapelens-core"
+NATURAL = ROOT / "target/release/natural-core"
+CORE = ROOT / "target/release/scrapelens-core"
 SIM = ROOT / "testserver/detran-sim/detran_sim.py"
 HAR = ROOT / "fixtures/detran-pb-real-shape/real-shape-1round.har"
 OUT = ROOT / "adapters/natural-ajax/evidence/strict.json"

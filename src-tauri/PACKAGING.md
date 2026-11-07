@@ -53,7 +53,7 @@ cd app && npm ci && cd ..
 ./app/node_modules/.bin/tauri build --bundles app
 ```
 
-The bundle is `src-tauri/target/release/bundle/macos/ScrapeLens.app`.
+The bundle is `target/release/bundle/macos/ScrapeLens.app` (root workspace target).
 
 `tauri.conf.json` names the signing identity `ScrapeLens Local Signing`. That is a self-signed
 certificate in the developer's login keychain, not a Developer ID. It keeps the designated
@@ -68,7 +68,7 @@ signature instead:
 Checks, then the archive (keep it outside the repository):
 
 ```sh
-app=src-tauri/target/release/bundle/macos/ScrapeLens.app
+app=target/release/bundle/macos/ScrapeLens.app
 codesign --verify --deep --strict "$app"
 codesign -dr - "$app"                       # designated requirement
 ditto -c -k --keepParent "$app" ScrapeLens-<version>-macos-arm64.zip

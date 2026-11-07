@@ -17,9 +17,9 @@ done
 step "tsc"; npx tsc --noEmit >>"$LOG" 2>&1 && echo "tsc ok" | tee -a "$LOG" || { echo "tsc FAIL" | tee -a "$LOG"; fail=1; }
 step "tauri build"
 cd /src && ./app/node_modules/.bin/tauri build --bundles deb,appimage >>"$LOG" 2>&1 || { echo "build FAIL" | tee -a "$LOG"; exit 1; }
-B=/src/src-tauri/target/release/bundle
+B=/src/target/release/bundle
 cp $B/deb/*.deb $B/appimage/*.AppImage "$OUT"/
-cp /src/src-tauri/target/release/scrapelens "$OUT/scrapelens"
+cp /src/target/release/scrapelens "$OUT/scrapelens"
 # The smoke needs the test-only command line (`--import-har`), which release builds do not
 # have: build a test-hooks binary from the same source. The shipped binary is the release one.
 step "smoke binary (test-hooks, custom-protocol)"
@@ -29,7 +29,7 @@ step "smoke binary (test-hooks, custom-protocol)"
 # so that `frontendDist` exists to be embedded. The shipped binary above is the release one.
 (cd /src/app && npm run -s build >>"$LOG" 2>&1) \
   && (cd /src/src-tauri && cargo build --locked --release --features test-hooks,tauri/custom-protocol >>"$LOG" 2>&1) \
-  && cp /src/src-tauri/target/release/scrapelens "$OUT/scrapelens-smoke" \
+  && cp /src/target/release/scrapelens "$OUT/scrapelens-smoke" \
   || { echo "smoke binary FAIL" | tee -a "$LOG"; fail=1; }
 step "smoke (Xvfb, --import-har)"
 export HOME=/tmp/smokehome; rm -rf "$HOME"; mkdir -p "$HOME"

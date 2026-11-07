@@ -35,6 +35,8 @@ mod tests {
             network: NetworkMode::LoopbackOnly,
             cookie_source: None,
             initial_cookies: Vec::new(),
+            proxy: None,
+            test_proxy_bypass_loopback: false,
         };
         let status_thread = status.clone();
         let join = std::thread::spawn(move || run(config, status_thread, stop_rx, ready_tx));

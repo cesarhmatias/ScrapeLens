@@ -31,9 +31,9 @@ reductions, each with the estimate and what was actually measured.
   (±30 % on the short stages).
 - **Reproduce:**
   ```
-  cd capture && cargo build --release --example capture_big
+  cargo build --release -p scrapelens-capture --example capture_big
   ./target/release/examples/capture_big /tmp/big20k 20000     # ~5 min
-  cd ../experiments/session-memory && cargo build --release
+  cargo build --release -p session-memory
   ./target/release/session-memory import-eager /tmp/big20k   # one stage at a time
   ```
   Note: the measurements were made on a clean snapshot of `HEAD` (`git archive`) because
@@ -241,9 +241,9 @@ Reading:
 - `capture-write` dropped from 9.2 to 7.6 GiB and from 263 to 16 s; what remains is the NetLog parse
   (P4), resolved in round 16 (§8).
 - Variation: ±1 % in memory; the short times vary with the disk cache (±30 %).
-- Reproduce: `cd experiments/session-memory && cargo build --release && ./target/release/session-memory
+- Reproduce: `cargo build --release -p session-memory && ./target/release/session-memory
   <stage> /tmp/big20k` (one stage per process); `inspect`: `/usr/bin/time -l
-  core/target/release/scrapelens-core inspect /tmp/big20k > /dev/null`.
+  ./target/release/scrapelens-core inspect /tmp/big20k > /dev/null`.
 
 **After P4 and P5 (20 thousand captured requests, measured):**
 
@@ -296,7 +296,7 @@ Reading:
 Reproduce (one stage per process):
 
 ```
-cd experiments/session-memory && cargo build --release
+cargo build --release -p session-memory
 ./target/release/session-memory netlog-only   /tmp/big20k
 ./target/release/session-memory capture-full  /tmp/big20k
 ./target/release/session-memory capture-write /tmp/big20k

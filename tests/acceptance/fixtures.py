@@ -19,7 +19,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-CORE = ROOT / "core" / "target" / "release" / "scrapelens-core"
+CORE = ROOT / "target" / "release" / "scrapelens-core"
 FIX = ROOT / "fixtures" / "acceptance"
 
 FIXTURE_META = {

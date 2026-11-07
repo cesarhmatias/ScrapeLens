@@ -18,3 +18,6 @@ src-tauri/linux/out/
 #   cargo run -p scrapelens-testserver -- gen-cert   (or the test suites, in a temp folder)
 fixtures/tls/*
 !fixtures/tls/README.txt
+
+# The proxy acceptance driver is an explicitly excluded workspace of its own.
+experiments/proxy/acceptance/driver/Cargo.lock

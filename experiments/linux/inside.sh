@@ -30,12 +30,11 @@ for stage in "${stages[@]}"; do
             (cd recon && CARGO_TARGET_DIR=/cache/target-recon xvfb-run -a bash scripts/live_e2e.sh 2>&1 | grep -E "test result|FAILED|erro|error" | head) ;;
     multi)  # check_multi_target.py with Tauri swapped for the stand-in crate (shim)
             CARGO_TARGET_DIR=/cache/target-testserver cargo build --release --manifest-path testserver/Cargo.toml 2>&1 | tail -3
-            mkdir -p testserver/target/release && cp /cache/target-testserver/release/scrapelens-testserver testserver/target/release/
+            mkdir -p target/release && cp /cache/target-testserver/release/scrapelens-testserver target/release/
             CARGO_TARGET_DIR=/cache/target-core cargo build --release --manifest-path core/Cargo.toml 2>&1 | tail -2
-            mkdir -p core/target/release && cp /cache/target-core/release/scrapelens-core core/target/release/
-            rm -rf src-tauri && cp -a experiments/linux/shim src-tauri
-            (cd src-tauri && cargo generate-lockfile 2>&1 | tail -1)
-            CARGO_TARGET_DIR=/cache/target-shim python3 tests/acceptance/check_multi_target.py 2>&1 | tail -25 ;;
+            mkdir -p target/release && cp /cache/target-core/release/scrapelens-core target/release/
+            SL_CAPTURE_TEST_DIR=/work/scrapelens/experiments/linux/shim \
+              CARGO_TARGET_DIR=/cache/target-shim python3 tests/acceptance/check_multi_target.py 2>&1 | tail -25 ;;
     xdg)    # profile and state root under $XDG_RUNTIME_DIR (0700), without TMPDIR
             export XDG_RUNTIME_DIR="$(mktemp -d /tmp/xdg.XXXXXX)"; chmod 700 "$XDG_RUNTIME_DIR"; unset TMPDIR
             : > /tmp/xdg-raw.txt
@@ -52,6 +51,10 @@ for stage in "${stages[@]}"; do
             # the container's real browser (product, version, owning package), as validation sees it
             cargo_in capture cargo test --lib the_installed_browser -- --nocapture 2>&1 | grep -E "^(GoogleChrome|Chromium)|test result" ;;
     mcp)    cargo_in mcp cargo test 2>&1 | grep -E "test result|FAILED|error(\[|:)|warning: unused" | head -12 ;;
+    workspace) # root workspace without the Tauri App (this image has no WebKitGTK)
+            CARGO_TARGET_DIR=/cache/target-workspace cargo test --locked --workspace --exclude scrapelens 2>&1 \
+              | grep -E "test result|FAILED|error(\[|:)";
+            CARGO_TARGET_DIR=/cache/target-workspace cargo clippy --locked --workspace --all-targets --exclude scrapelens --exclude scrapelens-testserver -- -D warnings 2>&1 | tail -10 ;;
     *) echo "unknown stage: $stage" ;;
   esac
 done

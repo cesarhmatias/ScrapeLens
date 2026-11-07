@@ -555,7 +555,7 @@ def reviewer_cases(core, wrapper, tmp, info):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--core"); ap.add_argument("--python"); ap.add_argument("--port", type=int, default=8793)
-    ap.add_argument("--wrapper", default=str(ROOT / "adapters/natural-ajax/target/release/natural-core"))
+    ap.add_argument("--wrapper", default=str(ROOT / "target/release/natural-core"))
     ap.add_argument("hars", nargs="*", default=[h for h in REAL if Path(h).exists()],
                     help="real HARs (default: SL_REAL_HARS); skipped when none is given")
     a = ap.parse_args()

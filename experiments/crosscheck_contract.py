@@ -30,8 +30,8 @@ NODE = shutil.which("node") or "/opt/homebrew/bin/node"
 
 # The testserver may be Rust or Go; the contract (ports/endpoints/JSONL) is the same.
 BIN_CANDIDATES = [
-    REPO / "testserver" / "target" / "release" / "scrapelens-testserver",
-    REPO / "testserver" / "target" / "debug" / "scrapelens-testserver",
+    REPO / "target" / "release" / "scrapelens-testserver",
+    REPO / "target" / "debug" / "scrapelens-testserver",
     REPO / "testserver" / "bin" / "scrapelens-testserver",
     REPO / "testserver" / "scrapelens-testserver",
     REPO / "testserver" / "scrapelens-testserver.exe",

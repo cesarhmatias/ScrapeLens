@@ -98,7 +98,7 @@ jobs:
       - name: Check the bundle (signature stated, no test-only variables)
         run: |
           set -euo pipefail
-          app="src-tauri/target/release/bundle/macos/ScrapeLens.app"
+          app="target/release/bundle/macos/ScrapeLens.app"
           bin="$app/Contents/MacOS/scrapelens"
           echo "Signature (must be ad-hoc here, not Developer ID):"
           codesign -dv --verbose=2 "$app" 2>&1 | grep -E "Signature|Authority|TeamIdentifier" || true

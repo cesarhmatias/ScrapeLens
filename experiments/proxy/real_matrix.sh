@@ -9,7 +9,7 @@ OUT=${1:?out dir}
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 PW=${PROXY_TEST_PASSWORD:-Pw-Exp-7f3a9Q}; USER=${PROXY_TEST_USER:-exp-user}
-TS="$ROOT/testserver/target/debug/scrapelens-testserver"
+TS="$ROOT/target/debug/scrapelens-testserver"
 TLS="$ROOT/fixtures/tls"
 # Test certificates are generated, not tracked: make them when this checkout has none.
 [ -f "$TLS/scrapelens-test-localhost.key.pem" ] || (cd "$ROOT/testserver" && cargo run -q -- gen-cert) || exit 1
@@ -28,7 +28,7 @@ SCRAPELENS_TESTPROXY_AUTH="$USER:$PW" "$TS" proxy --kind socks5 --port 18723 --e
 "$TS" proxy --kind https --port 18726 --evidence "$OUT/ts-https-open.jsonl" > "$OUT/ts-https-open.stdout" 2>&1 & PIDS="$PIDS $!"
 sleep 4
 cd "$ROOT/capture" && cargo build -q --example proxy_import || exit 1
-BIN="$ROOT/capture/target/debug/examples/proxy_import"
+BIN="$ROOT/target/debug/examples/proxy_import"
 run_one() { # name route-url target-url
   name=$1; route=$2; target=$3
   dir="$OUT/$name"; rm -rf "$dir"; mkdir -p "$dir"

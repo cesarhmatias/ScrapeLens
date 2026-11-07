@@ -6,7 +6,7 @@ use std::process::Command;
 
 fn core_binary() -> Option<PathBuf> {
     let path =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../core/target/release/scrapelens-core");
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/release/scrapelens-core");
     path.is_file().then_some(path)
 }
 

@@ -81,7 +81,7 @@ def run(py, script, base, cwd, client, extra=()):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--core"); ap.add_argument("--wrapper", default=str(ROOT / "adapters/natural-ajax/target/release/natural-core")); ap.add_argument("--python"); ap.add_argument("--port", type=int, default=8792)
+    ap.add_argument("--core"); ap.add_argument("--wrapper", default=str(ROOT / "target/release/natural-core")); ap.add_argument("--python"); ap.add_argument("--port", type=int, default=8792)
     ap.add_argument("--adapter-args", default="--adapter natural-ajax")
     ap.add_argument("--roundtrip-cmd", default="adapter-roundtrip")
     a = ap.parse_args()

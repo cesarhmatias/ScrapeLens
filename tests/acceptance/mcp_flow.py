@@ -40,7 +40,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-DEFAULT_BIN = ROOT / "mcp" / "target" / "debug" / "scrapelens-mcp"
+DEFAULT_BIN = ROOT / "target" / "debug" / "scrapelens-mcp"
 
 SECRET_COOKIE = "SECRET-FLOW-COOKIE-7f3a"
 SECRET_TOKEN = "SECRET-FLOW-TOKEN-9c1d"

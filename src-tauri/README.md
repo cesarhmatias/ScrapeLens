@@ -13,7 +13,7 @@ end user. The data contract is the v1 of `docs/03-contracts.md`.
 cd src-tauri && cargo test
 ```
 
-Local build output: `src-tauri/target/release/bundle/macos/ScrapeLens.app`
+Local build output: `target/release/bundle/macos/ScrapeLens.app` (root workspace target)
 (arm64, ad-hoc signature `linker-signed`, **no Apple certificate** and no
 notarization). Distribution/signing are not part of this delivery.
 

@@ -64,7 +64,7 @@ def main():
     threading.Thread(target=latin.serve_forever, daemon=True).start()
     test = None
     server = subprocess.Popen(
-        [str(ROOT / "testserver/target/debug/scrapelens-testserver"), "serve", "--only", "h1",
+        [str(ROOT / "target/debug/scrapelens-testserver"), "serve", "--only", "h1",
          "--h1", f"127.0.0.1:{a.port}", "--evidence", str(srv), "--run-id", "bodies"],
         stdout=open(out / "server.log", "w"), stderr=subprocess.STDOUT)
     try:
@@ -223,7 +223,7 @@ def verify(out, session, base):
     return {"chrome": subprocess.run(["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "--version"], capture_output=True, text=True).stdout.strip(), "cases": cases}
 
 
-CORE = ROOT / "core/target/debug/scrapelens-core"
+CORE = ROOT / "target/debug/scrapelens-core"
 
 
 def add_session_checks(session, add, by_case):

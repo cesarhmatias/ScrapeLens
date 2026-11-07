@@ -169,11 +169,12 @@ during the capture.
   **read-only snapshot** of the repository and runs `inside.sh`.
 - `inside.sh [stages]`: `info`, `clippy`, `unit` (`cargo test --lib`), `live` (the live tests on
   loopback, `--ignored`, under `xvfb-run`, one thread), `recon` (`cargo test` and `live_e2e.sh`),
-  `multi` (the `check_multi_target.py`), `xdg` and `mcp`.
-- `shim/`: a stand-in for `src-tauri` **in the container only**. `check_multi_target.py` drives
-  `cargo test live_bodies_cycle` inside `src-tauri`; without Tauri on Linux, the container swaps
-  `src-tauri` for a minimal crate whose test does exactly the same (`scrapelens_capture::run`,
-  headless, loopback only). The acceptance script, owned by Tests, was not touched.
+  `multi` (the `check_multi_target.py`), `xdg`, `mcp` and `workspace` (root `cargo test` and clippy
+  of the workspace, without the Tauri App: this image has no WebKitGTK).
+- `shim/`: a stand-in for `src-tauri` **in the container only**, now a workspace member.
+  `check_multi_target.py` drives `cargo test live_bodies_cycle` inside the capture test crate;
+  without Tauri on Linux, the container points it here (`SL_CAPTURE_TEST_DIR`) at a minimal crate
+  whose test does exactly the same (`scrapelens_capture::run`, headless, loopback only).
 
 ## 7. What ran and what did not
 

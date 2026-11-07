@@ -36,14 +36,14 @@ No additional core fix or new product build was needed.
 
 ## Artifact and installation
 
-- Package: `src-tauri/target/release/bundle/macos/ScrapeLens.app`.
+- Package: `target/release/bundle/macos/ScrapeLens.app`.
 - Approximate size: 13.2 MiB; one Mach-O arm64 executable, 13,119,296 bytes.
 - SHA-256 of the signed executable:
   `a7004d4e95e86e2d53750a76b0579d345cabf6e53cb25c3b15c446d25ec522c0`.
 - Ad-hoc signature verified with `codesign --verify --deep --strict` by
   App and again by the leader; no Developer ID/notarization. Gatekeeper rejects
   normal distribution of this artifact. Intel and other macOS versions not tested.
-- Open it from Finder or `open src-tauri/target/release/bundle/macos/ScrapeLens.app`
+- Open it from Finder or `open target/release/bundle/macos/ScrapeLens.app`
   from the root. You may copy the bundle to `/Applications`.
 - External Chrome required for capture; Node/Python/Rust not required
   to run the app. The export CLI is a separate tool.
@@ -139,7 +139,7 @@ were not repeated in that last pass. The bundle hash remained the same.
 
 ## Delivery of rounds 4 to 7 (2026-10-29)
 
-Package: `src-tauri/target/release/bundle/macos/ScrapeLens.app`, built at
+Package: `target/release/bundle/macos/ScrapeLens.app`, built at
 HEAD bc935eb (build commit b2ba81b), ad-hoc signed
 (`codesign --verify --deep --strict` OK), executable SHA-256
 `6e301e70161c314c4475923a91182edd26bcf009ec2a5f3ddd90106b6e91cce9`. Nothing was

@@ -29,7 +29,7 @@ Harnesses that depend on these switches must build with `--features test-hooks`:
 
 ## Check on a release binary
 
-`strings target/release/scrapelens` (`cargo build --release`, no features) finds none of
+`strings target/release/scrapelens` (from the root; `cargo build --release -p scrapelens`, no features) finds none of
 the App's test variables or command-line flags (`SCRAPELENS_CAPTURE_IGNORE_CERT`,
 `SCRAPELENS_CAPTURE_HEADLESS`, `SCRAPELENS_TEST_MODE`,
 `SCRAPELENS_TEST_PROXY_BYPASS_LOOPBACK`, `SCRAPELENS_CAPTURE_URL`,

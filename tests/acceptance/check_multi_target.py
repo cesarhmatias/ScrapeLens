@@ -39,8 +39,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 TESTS = ROOT / "tests"
 OUT = TESTS / "results" / "multi-target.json"
-SERVER_BIN = ROOT / "testserver" / "target" / "release" / "scrapelens-testserver"
-SRC_TAURI = ROOT / "src-tauri"
+SERVER_BIN = ROOT / "target" / "release" / "scrapelens-testserver"
+SRC_TAURI = Path(os.environ.get("SL_CAPTURE_TEST_DIR") or ROOT / "src-tauri")
 
 # Markers that /multi/ fires (see testserver/README.md, "Multi-target pages").
 EXPECTED = [
@@ -854,9 +854,9 @@ def main() -> int:
     ap.add_argument("--keep", action="store_true")
     a = ap.parse_args()
 
-    core = a.core or str(ROOT / "core" / "target" / "release" / "scrapelens-core")
+    core = a.core or str(ROOT / "target" / "release" / "scrapelens-core")
     if not Path(core).exists():
-        sys.exit("scrapelens-core not found; run `cargo build --release` in core/ or use --core")
+        sys.exit("scrapelens-core not found; run `cargo build --release -p scrapelens-core` or use --core")
 
     tmp = Path(tempfile.mkdtemp(prefix="sl-multi-target-"))
     os.chmod(tmp, 0o700)

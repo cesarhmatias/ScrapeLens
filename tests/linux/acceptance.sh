@@ -12,7 +12,7 @@
 # far from any control — only to give focus, and records the case in shortcuts.txt.
 set -uo pipefail
 ARCH_LABEL="$1"; APPIMAGE="$2"; DEB="${3:-}"
-TESTSERVER="${4:-$HOME/scrapelens/testserver/target/release/scrapelens-testserver}"
+TESTSERVER="${4:-$HOME/scrapelens/target/release/scrapelens-testserver}"
 PROBE="${5:-$HOME/scrapelens/tests/linux/probe_server.py}"
 OUT="$HOME/sl-acceptance-$ARCH_LABEL-$(date +%Y%m%d%H%M%S)"
 mkdir -p "$OUT"; FAILS=0

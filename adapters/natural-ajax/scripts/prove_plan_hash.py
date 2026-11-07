@@ -8,8 +8,8 @@ import argparse, json, os, random, subprocess, sys, tempfile, time, urllib.parse
 from pathlib import Path
 
 R = Path(__file__).resolve().parents[3]
-C = str(R / "core/target/release/scrapelens-core")
-N = str(R / "adapters/natural-ajax/target/release/natural-core")
+C = str(R / "target/release/scrapelens-core")
+N = str(R / "target/release/natural-core")
 OUT = R / "adapters/natural-ajax/evidence/plan-hash.json"
 
 

@@ -44,8 +44,8 @@ def wait_http(url: str, timeout: float = 30.0) -> None:
 
 def testserver_bin() -> pathlib.Path:
     for p in (
-        ROOT / "testserver/target/release/scrapelens-testserver",
-        ROOT / "testserver/target/debug/scrapelens-testserver",
+        ROOT / "target/release/scrapelens-testserver",
+        ROOT / "target/debug/scrapelens-testserver",
     ):
         if p.is_file():
             return p

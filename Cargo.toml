@@ -1,0 +1,18 @@
+# Single workspace for every crate of the product, the test server and the tools.
+# One root Cargo.lock pins all of them (T19). Members that are not part of the
+# product (the Linux shim) are excluded on purpose.
+[workspace]
+resolver = "3"
+members = [
+    "core",
+    "capture",
+    "mcp",
+    "recon",
+    "src-tauri",
+    "testserver",
+    "adapters/natural-ajax",
+    "tests/export",
+    "experiments/session-memory",
+    "experiments/linux/shim",
+]
+exclude = ["experiments/proxy/acceptance/driver"]

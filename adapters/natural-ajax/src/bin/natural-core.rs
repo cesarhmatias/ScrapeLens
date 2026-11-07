@@ -2,7 +2,7 @@
 //!
 //! `export-priming` runs here, with the adapter and the Python encoder; any
 //! other subcommand is passed through to `scrapelens-core` (path in
-//! `SCRAPELENS_CORE_BIN`, otherwise `../../core/target/release/scrapelens-core`
+//! `SCRAPELENS_CORE_BIN`, otherwise `../../target/release/scrapelens-core`
 //! relative to this crate, otherwise the one on PATH). The adapter only applies with `--adapter natural-ajax`;
 //! without the flag, the script takes the snippet path (control).
 
@@ -41,7 +41,7 @@ fn core_binary() -> Result<PathBuf, String> {
         }
     }
     let sibling =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../core/target/release/scrapelens-core");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/scrapelens-core");
     if sibling.is_file() && !is_me(&sibling) {
         return Ok(sibling);
     }

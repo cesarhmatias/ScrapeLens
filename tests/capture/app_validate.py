@@ -32,9 +32,9 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-CORE = ROOT / "core" / "target" / "release" / "scrapelens-core"
+CORE = ROOT / "target" / "release" / "scrapelens-core"
 DEFAULT_SESSIONS = pathlib.Path.home() / "Library" / "Application Support" / "app.scrapelens.desktop" / "sessions"
-DEFAULT_BUNDLE = ROOT / "src-tauri" / "target" / "release" / "bundle" / "macos" / "ScrapeLens.app"
+DEFAULT_BUNDLE = ROOT / "target" / "release" / "bundle" / "macos" / "ScrapeLens.app"
 DEFAULT_IMPORT_SOURCES = pathlib.Path.home() / "Projects" / "scrapelens-import-tmp"
 
 
