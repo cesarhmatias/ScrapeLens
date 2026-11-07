@@ -1417,3 +1417,36 @@ mod same_port_tests {
         assert!(verdict.is_err(), "a stranger with the browser's port was admitted: {verdict:?}");
     }
 }
+
+#[cfg(test)]
+mod pending_tests {
+    use std::sync::atomic::Ordering;
+
+    use super::Pending;
+
+    /// At the limit the oldest waiter is cancelled, never the newest arrival.
+    #[test]
+    fn the_oldest_waiter_is_cancelled_at_the_limit() {
+        let pending = Pending::new(2);
+        let (first, evicted) = pending.enter();
+        assert!(!evicted);
+        let (second, evicted) = pending.enter();
+        assert!(!evicted);
+        let (third, evicted) = pending.enter();
+        assert!(evicted, "the third arrival takes a slot from the oldest");
+        assert!(first.cancelled.load(Ordering::SeqCst), "the oldest waiter is cancelled");
+        assert!(!second.cancelled.load(Ordering::SeqCst), "a newer waiter is kept");
+        assert!(!third.cancelled.load(Ordering::SeqCst), "the newest arrival is kept");
+    }
+
+    /// A finished waiter frees its slot, so nothing is evicted for it.
+    #[test]
+    fn a_finished_waiter_frees_its_slot() {
+        let pending = Pending::new(2);
+        let (first, _) = pending.enter();
+        let (_second, _) = pending.enter();
+        pending.leave(&first);
+        let (_third, evicted) = pending.enter();
+        assert!(!evicted, "a freed slot is taken without an eviction");
+    }
+}

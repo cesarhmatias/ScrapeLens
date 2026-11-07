@@ -188,6 +188,10 @@ pub struct Relay {
     peer_checks: Arc<AtomicU64>,
     peer_refused: Arc<AtomicU64>,
     peer_max_nanos: Arc<AtomicU64>,
+    /// Stack size of the check threads; 0 keeps the platform default. Tests set it to make a
+    /// thread start fail.
+    #[cfg(test)]
+    worker_stack: Arc<AtomicUsize>,
 }
 
 impl Relay {
@@ -252,6 +256,7 @@ impl Relay {
         let peer_checks = Arc::new(AtomicU64::new(0));
         let peer_refused = Arc::new(AtomicU64::new(0));
         let peer_max_nanos = Arc::new(AtomicU64::new(0));
+        let worker_stack = Arc::new(AtomicUsize::new(0));
         let shared = Shared {
             link: Arc::new(link.clone()),
             allow,
@@ -268,6 +273,7 @@ impl Relay {
             peer_checks: Arc::clone(&peer_checks),
             peer_refused: Arc::clone(&peer_refused),
             peer_max_nanos: Arc::clone(&peer_max_nanos),
+            worker_stack: Arc::clone(&worker_stack),
         };
         #[cfg(not(test))]
         drop(client_limit);
@@ -289,7 +295,16 @@ impl Relay {
             peer_checks,
             peer_refused,
             peer_max_nanos,
+            #[cfg(test)]
+            worker_stack,
         })
+    }
+
+    /// Test only: the stack size for check threads started from now on. A stack this large cannot
+    /// be mapped, so the thread start fails and the connection must be refused.
+    #[cfg(test)]
+    pub(crate) fn force_worker_stack(&self, bytes: usize) {
+        self.worker_stack.store(bytes, Ordering::SeqCst);
     }
 
     /// The only process, with its descendants, allowed to open a tunnel.
@@ -392,6 +407,7 @@ struct Shared {
     peer_checks: Arc<AtomicU64>,
     peer_refused: Arc<AtomicU64>,
     peer_max_nanos: Arc<AtomicU64>,
+    worker_stack: Arc<AtomicUsize>,
 }
 
 /// One warning per reason. A repeat says how many times, and does not add a second warning.
@@ -592,7 +608,9 @@ fn accept_loop(listener: TcpListener, stop: Arc<AtomicBool>, shared: Shared) {
                 let pending = Arc::clone(&shared.pending);
                 let waiting = Arc::clone(&ticket);
                 let worker = shared.clone();
-                let spawned = thread::Builder::new().spawn(move || {
+                let stack = worker.worker_stack.load(Ordering::SeqCst);
+                let builder = if stack > 0 { thread::Builder::new().stack_size(stack) } else { thread::Builder::new() };
+                let spawned = builder.spawn(move || {
                     let _tracked_client = worker.track(&client);
                     let verdict = worker.admit(&client, &ticket.cancelled);
                     // The check is over: its waiting slot is free before any tunnel starts.
@@ -2569,5 +2587,48 @@ mod wire_tests {
             &super::peer::Peers::new(64),
         );
         assert_eq!(verdict, Err(super::peer::ALREADY_CLOSED), "{verdict:?}");
+    }
+
+    /// A check thread that cannot start refuses its connection, and accepting goes on: a later
+    /// connection is still answered.
+    #[test]
+    fn a_failed_check_thread_start_refuses_the_connection_and_accepting_goes_on() {
+        let (up, _seen) = socks_upstream(USER, PASSWORD);
+        let link = ProxyLink::parse(&format!("socks5://{USER}:{PASSWORD}@127.0.0.1:{up}")).unwrap();
+        let relay = Relay::start(&link, None).unwrap();
+        relay.force_worker_stack(usize::MAX / 2);
+        let _refused = TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())).unwrap();
+        let until = std::time::Instant::now() + Duration::from_secs(5);
+        while !relay.failures().iter().any(|f| f.starts_with("the relay could not start a check thread"))
+            && std::time::Instant::now() < until
+        {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            relay.failures().iter().any(|f| f.starts_with("the relay could not start a check thread")),
+            "{:?}",
+            relay.failures()
+        );
+
+        relay.force_worker_stack(0);
+        let _later = TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())).unwrap();
+        let until = std::time::Instant::now() + Duration::from_secs(5);
+        while !relay.failures().iter().any(|f| f.starts_with("the capture browser is not running yet"))
+            && std::time::Instant::now() < until
+        {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            relay.failures().iter().any(|f| f.starts_with("the capture browser is not running yet")),
+            "a connection after the failed start was not answered: {:?}",
+            relay.failures()
+        );
+    }
+
+    /// The waiting limit is a quarter of the descriptor soft limit, between the floor and the cap.
+    #[test]
+    fn the_waiting_limit_follows_the_descriptor_limit() {
+        let limit = pending_limit();
+        assert!((MIN_PENDING_CHECKS..=MAX_PENDING_CHECKS).contains(&limit), "{limit}");
     }
 }
