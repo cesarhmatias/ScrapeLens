@@ -614,7 +614,7 @@ impl PrivateDir {
 
         validate_attachment_name(name)?;
         refuse_destination_at(&self.dir, name, &self.path.join(name))?;
-        let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+        let flags = OFlags::RDONLY | OFlags::NONBLOCK | OFlags::NOFOLLOW | OFlags::CLOEXEC;
         let mut input = rustix::fs::open(source, flags, Mode::empty())
             .map(File::from)
             .map_err(|error| CoreError::io(source, errno_io(error)))?;

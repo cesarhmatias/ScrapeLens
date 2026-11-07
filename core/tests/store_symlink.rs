@@ -109,6 +109,37 @@ fn an_ancestor_without_the_read_bit_is_walked_with_search_rights() {
 }
 
 #[test]
+fn copy_from_refuses_a_fifo_without_blocking_on_it() {
+    // L5 regression: opening a FIFO read-only blocks until a writer appears.
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let root = tempfile::tempdir().unwrap();
+    let destination = root.path().join("dest");
+    let private = scrapelens_core::store::PrivateDir::open(&destination).unwrap();
+    let fifo = root.path().join("fifo");
+    let status = std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .expect("mkfifo");
+    assert!(status.success(), "mkfifo failed");
+
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = private
+            .copy_from("body.bin", &fifo)
+            .map_err(|error| error.to_string());
+        let _ = tx.send(result);
+    });
+    let result = rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("copy_from blocked on a FIFO");
+    let error = result.expect_err("a FIFO must be refused");
+    assert!(error.contains("not a regular file"), "{error}");
+    assert!(!destination.join("body.bin").exists());
+}
+
+#[test]
 fn symlinked_destinations_are_refused_and_targets_stay_intact() {
     let root = tempfile::tempdir().unwrap();
     let dir = root.path().join("session");
