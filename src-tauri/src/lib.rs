@@ -17,6 +17,7 @@ pub mod commands;
 pub mod cookie_import;
 pub mod export;
 pub mod grants;
+pub mod hardening;
 pub mod listing;
 pub mod menu;
 pub mod prefs;
@@ -72,6 +73,10 @@ pub fn cleanup_orphans_on_start(state_root: &Path) {
 }
 
 pub fn run() {
+    // T15: no core dumps, and no ptrace or /proc access by other processes, from the first instant.
+    for problem in hardening::harden_process() {
+        eprintln!("hardening: {problem}");
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
