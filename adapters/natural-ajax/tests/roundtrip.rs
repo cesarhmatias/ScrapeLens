@@ -159,10 +159,19 @@ fn hostile_inputs_are_errors_never_panics() {
     }
 }
 
-#[test]
-fn parse_cost_is_linear() {
+/// Allowed growth beyond linear. 20,000 fields must cost at most `LINEAR_SLACK` times ten parses
+/// of 2,000 fields. Linear work gives a ratio of about 1 (measured idle in debug); a quadratic
+/// parse gives about 10, which the bound catches.
+const LINEAR_SLACK: f64 = 3.0;
+
+/// Multiple of the reference (one parse of MAX_OPS operations) that a refused 8 MiB input may
+/// cost. Measured in debug: with the limit, parse and decode cost about 11× the reference (the
+/// 8 MiB pass plus MAX_OPS operations). With the limit removed, the same input costs about 47×
+/// for parse and 73× for decode (8,388,608 operations). 25 lies between, so a missing limit fails.
+const LIMIT_FACTOR: f64 = 25.0;
+
+fn fields_text(n: usize) -> String {
     let mut text = String::from("l");
-    let n = 20_000;
     for i in 0..n {
         let name = format!("campo{i:05}");
         let value = "é😀x".repeat(3);
@@ -175,12 +184,33 @@ fn parse_cost_is_linear() {
         ));
     }
     text.push_str("x02ok");
-    let start = thread_cpu();
-    let items = grammar::parse(&text).expect("parse");
-    let ops: Vec<_> = items.iter().map(|i| i.op.clone()).collect();
-    assert_eq!(grammar::serialize(&ops).unwrap(), text);
-    let spent = thread_cpu() - start;
-    assert!(spent.as_secs_f64() < 2.0, "CPU time {spent:?}");
+    text
+}
+
+#[test]
+fn parse_cost_is_linear() {
+    // Growth, not absolute time: 10× the fields must cost about 10× the work, not 100×. Both
+    // sizes are timed in this process, so host load scales both measurements alike.
+    let small = fields_text(2_000);
+    let large = fields_text(20_000);
+    let parse_all = |text: &str| {
+        let items = grammar::parse(text).expect("parse");
+        let ops: Vec<_> = items.iter().map(|i| i.op.clone()).collect();
+        assert_eq!(grammar::serialize(&ops).unwrap(), text);
+    };
+    // The reference is a block of ten parses, so its duration (about 70 ms) is not a short
+    // denominator; the large input is the min of three runs.
+    let small_block = min_cpu(3, || {
+        for _ in 0..10 {
+            parse_all(&small);
+        }
+    });
+    let t_large = min_cpu(3, || parse_all(&large));
+    assert_cost_within(
+        "parse of 20,000 fields against 10 × 2,000",
+        t_large,
+        small_block.mul_f64(LINEAR_SLACK),
+    );
 }
 
 /// CPU time spent by this thread. The cost bounds below measure work, not the wall clock: a
@@ -191,6 +221,28 @@ fn thread_cpu() -> std::time::Duration {
     let rc = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut ts) };
     assert_eq!(rc, 0, "clock_gettime(CLOCK_THREAD_CPUTIME_ID) failed");
     std::time::Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32)
+}
+
+/// Smallest thread CPU time over `runs` executions of `f`. Host load only adds time, so the
+/// minimum is the least disturbed run.
+fn min_cpu(runs: usize, mut f: impl FnMut()) -> std::time::Duration {
+    (0..runs)
+        .map(|_| {
+            let start = thread_cpu();
+            f();
+            thread_cpu() - start
+        })
+        .min()
+        .expect("at least one run")
+}
+
+fn assert_cost_within(what: &str, cost: std::time::Duration, bound: std::time::Duration) {
+    // Shown with `--nocapture` (or on failure): the measured cost against its bound.
+    eprintln!("{what}: CPU time {cost:?}, bound {bound:?}");
+    assert!(
+        cost <= bound,
+        "{what}: CPU time {cost:?} exceeds the bound {bound:?}"
+    );
 }
 
 fn rss_mb() -> f64 {
@@ -209,15 +261,31 @@ fn rss_mb() -> f64 {
 fn operation_limit_bounds_time_and_memory() {
     // `l`×8 MiB: refused by the operation limit, without exhausting memory.
     let text = "l".repeat(8 * 1024 * 1024);
-    let start = thread_cpu();
     assert!(grammar::parse(&text).is_err());
     assert!(NaturalAjax.decode(&text).is_err());
-    let spent = thread_cpu() - start;
-    assert!(spent.as_secs_f64() < 2.0, "CPU time {spent:?}");
+    // Process RSS (shared with the other tests of this binary): a loose ceiling. It is read
+    // before the timed runs below, which add to the peak.
+    eprintln!("operation limit: RSS {:.0} MB", rss_mb());
     assert!(rss_mb() < 500.0, "{} MB", rss_mb());
-    // Just below the limit it still works.
+    // Time: a bound relative to the work the limit lets through (MAX_OPS operations), timed in
+    // this process. The reference is the average of a block of ten parses, so its duration is
+    // not a short denominator. See LIMIT_FACTOR for the measured ratios.
     let ok = "l".repeat(grammar::MAX_OPS);
-    assert_eq!(grammar::parse(&ok).unwrap().len(), grammar::MAX_OPS);
+    let block = min_cpu(3, || {
+        for _ in 0..10 {
+            assert_eq!(grammar::parse(&ok).unwrap().len(), grammar::MAX_OPS);
+        }
+    });
+    let bound = (block / 10).mul_f64(LIMIT_FACTOR);
+    let parse = min_cpu(3, || {
+        let _ = grammar::parse(&text);
+    });
+    let decode = min_cpu(3, || {
+        let _ = NaturalAjax.decode(&text);
+    });
+    assert_cost_within("parse of an 8 MiB input over the limit", parse, bound);
+    assert_cost_within("decode of an 8 MiB input over the limit", decode, bound);
+    // Just below the limit it still works, and one more operation is refused.
     assert!(grammar::parse(&format!("{ok}l")).is_err());
 }
 
