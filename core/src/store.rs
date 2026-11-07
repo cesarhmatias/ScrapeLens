@@ -607,6 +607,34 @@ impl PrivateDir {
         write_private_replacing_at(&self.dir, name, &self.path.join(name), bytes, sync_data)
     }
 
+    /// Recursively removes the entry `name` relative to this descriptor. A
+    /// symlink is unlinked as a NAME (never followed); a missing name is Ok.
+    /// Cleanup after a failed write uses this so a swapped path cannot delete
+    /// anything outside the directory the descriptor holds.
+    pub fn remove_all(&self, name: &str) -> Result<()> {
+        validate_attachment_name(name)?;
+        remove_tree_at(&self.dir, std::ffi::OsStr::new(name), &self.path.join(name))
+    }
+
+    /// Copies the CONTENTS of the directory `source` into this private
+    /// directory, descriptor-relative on both sides. Symlinks and special
+    /// files are refused; directories become 0700 and files 0600.
+    pub fn copy_tree_from(&self, source: &Path) -> Result<()> {
+        use rustix::fs::{Mode, OFlags};
+
+        let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+        let src = rustix::fs::open(source, flags, Mode::empty())
+            .map(File::from)
+            .map_err(|error| CoreError::io(source, errno_io(error)))?;
+        let meta = src
+            .metadata()
+            .map_err(|error| CoreError::io(source, error))?;
+        if !meta.is_dir() {
+            return Err(not_a_directory(source));
+        }
+        copy_children(&src, &self.dir, source, &self.path)
+    }
+
     /// Copies a regular file into the directory without following links at the
     /// source or at the destination name.
     pub fn copy_from(&self, name: &str, source: &Path) -> Result<()> {
@@ -626,32 +654,147 @@ impl PrivateDir {
                 message: format!("{} is not a regular file; refused", source.display()),
             });
         }
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let tmp = format!(".{name}.tmp-{nanos}");
-        let target = self.path.join(name);
-        let create =
-            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
-        let mut output = rustix::fs::openat(&self.dir, tmp.as_str(), create, Mode::from(0o600))
-            .map(File::from)
-            .map_err(|error| CoreError::io(&target, errno_io(error)))?;
-        let copied = std::io::copy(&mut input, &mut output)
-            .and_then(|_| output.sync_all())
-            .map_err(|error| CoreError::io(&target, error));
-        if let Err(error) = copied {
-            let _ = rustix::fs::unlinkat(&self.dir, tmp.as_str(), rustix::fs::AtFlags::empty());
-            return Err(error);
-        }
-        rustix::fs::fchmod(&output, Mode::from(0o600))
-            .map_err(|error| CoreError::io(&target, errno_io(error)))?;
-        drop(output);
-        rustix::fs::renameat(&self.dir, tmp.as_str(), &self.dir, name).map_err(|error| {
-            let _ = rustix::fs::unlinkat(&self.dir, tmp.as_str(), rustix::fs::AtFlags::empty());
-            CoreError::io(&target, errno_io(error))
-        })
+        copy_open_file(
+            &mut input,
+            &self.dir,
+            std::ffi::OsStr::new(name),
+            &self.path.join(name),
+        )
     }
+}
+
+#[cfg(unix)]
+fn copy_open_file(input: &mut File, dst: &File, name: &std::ffi::OsStr, path: &Path) -> Result<()> {
+    use rustix::fs::{Mode, OFlags};
+
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = format!(
+        ".copy-tmp-{}-{nanos}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    let create =
+        OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let mut output = rustix::fs::openat(dst, tmp.as_str(), create, Mode::from(0o600))
+        .map(File::from)
+        .map_err(|error| CoreError::io(path, errno_io(error)))?;
+    let copied = std::io::copy(input, &mut output)
+        .and_then(|_| output.sync_all())
+        .map_err(|error| CoreError::io(path, error));
+    if let Err(error) = copied {
+        let _ = rustix::fs::unlinkat(dst, tmp.as_str(), rustix::fs::AtFlags::empty());
+        return Err(error);
+    }
+    rustix::fs::fchmod(&output, Mode::from(0o600))
+        .map_err(|error| CoreError::io(path, errno_io(error)))?;
+    drop(output);
+    rustix::fs::renameat(dst, tmp.as_str(), dst, name).map_err(|error| {
+        let _ = rustix::fs::unlinkat(dst, tmp.as_str(), rustix::fs::AtFlags::empty());
+        CoreError::io(path, errno_io(error))
+    })
+}
+
+#[cfg(unix)]
+fn directory_names(dir: &File, path: &Path) -> Result<Vec<std::ffi::OsString>> {
+    use std::os::unix::ffi::OsStrExt;
+
+    let mut names = Vec::new();
+    let mut entries =
+        rustix::fs::Dir::read_from(dir).map_err(|error| CoreError::io(path, errno_io(error)))?;
+    while let Some(entry) = entries.read() {
+        let entry = entry.map_err(|error| CoreError::io(path, errno_io(error)))?;
+        let name = entry.file_name().to_bytes();
+        if name == b"." || name == b".." {
+            continue;
+        }
+        names.push(std::ffi::OsStr::from_bytes(name).to_os_string());
+    }
+    Ok(names)
+}
+
+#[cfg(unix)]
+fn copy_children(src: &File, dst: &File, src_path: &Path, dst_path: &Path) -> Result<()> {
+    use rustix::fs::{AtFlags, FileType, Mode, OFlags};
+
+    for child in directory_names(src, src_path)? {
+        let child_src = src_path.join(&child);
+        let stat = rustix::fs::statat(src, &child, AtFlags::SYMLINK_NOFOLLOW)
+            .map_err(|error| CoreError::io(&child_src, errno_io(error)))?;
+        let kind = FileType::from_raw_mode(stat.st_mode as _);
+        if kind == FileType::Symlink {
+            return Err(CoreError::LimitExceeded {
+                message: format!("{} is a symbolic link; refused", child_src.display()),
+            });
+        }
+        let child_dst = dst_path.join(&child);
+        if kind.is_dir() {
+            match rustix::fs::mkdirat(dst, &child, Mode::from(0o700)) {
+                Ok(()) => {}
+                Err(error) if error == rustix::io::Errno::EXIST => {}
+                Err(error) => return Err(CoreError::io(&child_dst, errno_io(error))),
+            }
+            let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+            let src_child = rustix::fs::openat(src, &child, flags, Mode::empty())
+                .map(File::from)
+                .map_err(|error| CoreError::io(&child_src, errno_io(error)))?;
+            let dst_child = rustix::fs::openat(dst, &child, flags, Mode::empty())
+                .map(File::from)
+                .map_err(|error| CoreError::io(&child_dst, errno_io(error)))?;
+            rustix::fs::fchmod(&dst_child, Mode::from(0o700))
+                .map_err(|error| CoreError::io(&child_dst, errno_io(error)))?;
+            copy_children(&src_child, &dst_child, &child_src, &child_dst)?;
+        } else if kind.is_file() {
+            let flags = OFlags::RDONLY | OFlags::NONBLOCK | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+            let mut input = rustix::fs::openat(src, &child, flags, Mode::empty())
+                .map(File::from)
+                .map_err(|error| CoreError::io(&child_src, errno_io(error)))?;
+            let meta = input
+                .metadata()
+                .map_err(|error| CoreError::io(&child_src, error))?;
+            if !meta.is_file() {
+                return Err(CoreError::LimitExceeded {
+                    message: format!("{} is not a regular file; refused", child_src.display()),
+                });
+            }
+            copy_open_file(&mut input, dst, &child, &child_dst)?;
+        } else {
+            return Err(CoreError::LimitExceeded {
+                message: format!("{} is not a regular file; refused", child_src.display()),
+            });
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn remove_tree_at(dir: &File, name: &std::ffi::OsStr, path: &Path) -> Result<()> {
+    use rustix::fs::{AtFlags, FileType, Mode, OFlags};
+
+    let stat = match rustix::fs::statat(dir, name, AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(stat) => stat,
+        Err(error) if error == rustix::io::Errno::NOENT => return Ok(()),
+        Err(error) => return Err(CoreError::io(path, errno_io(error))),
+    };
+    let kind = FileType::from_raw_mode(stat.st_mode as _);
+    if kind != FileType::Directory {
+        return rustix::fs::unlinkat(dir, name, AtFlags::empty())
+            .map_err(|error| CoreError::io(path, errno_io(error)));
+    }
+    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let child = rustix::fs::openat(dir, name, flags, Mode::empty())
+        .map(File::from)
+        .map_err(|error| CoreError::io(path, errno_io(error)))?;
+    for entry in directory_names(&child, path)? {
+        remove_tree_at(&child, &entry, &path.join(&entry))?;
+    }
+    drop(child);
+    rustix::fs::unlinkat(dir, name, AtFlags::REMOVEDIR)
+        .map_err(|error| CoreError::io(path, errno_io(error)))
 }
 
 #[cfg(not(unix))]
@@ -679,6 +822,43 @@ impl PrivateDir {
 
     pub fn write_replacing(&self, name: &str, bytes: &[u8], sync_data: bool) -> Result<()> {
         self.write(name, bytes, sync_data)
+    }
+
+    pub fn remove_all(&self, name: &str) -> Result<()> {
+        validate_attachment_name(name)?;
+        let path = self.path.join(name);
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(CoreError::io(&path, error)),
+            Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {
+                fs::remove_dir_all(&path).map_err(|error| CoreError::io(&path, error))
+            }
+            Ok(_) => fs::remove_file(&path).map_err(|error| CoreError::io(&path, error)),
+        }
+    }
+
+    pub fn copy_tree_from(&self, source: &Path) -> Result<()> {
+        fn copy(from: &Path, to: &Path) -> Result<()> {
+            for entry in fs::read_dir(from).map_err(|error| CoreError::io(from, error))? {
+                let entry = entry.map_err(|error| CoreError::io(from, error))?;
+                let (src, dst) = (entry.path(), to.join(entry.file_name()));
+                let meta =
+                    fs::symlink_metadata(&src).map_err(|error| CoreError::io(&src, error))?;
+                if meta.file_type().is_symlink() {
+                    return Err(CoreError::LimitExceeded {
+                        message: format!("{} is a symbolic link; refused", src.display()),
+                    });
+                }
+                if meta.is_dir() {
+                    fs::create_dir(&dst).map_err(|error| CoreError::io(&dst, error))?;
+                    copy(&src, &dst)?;
+                } else {
+                    fs::copy(&src, &dst).map_err(|error| CoreError::io(&src, error))?;
+                }
+            }
+            Ok(())
+        }
+        copy(source, &self.path)
     }
 
     pub fn copy_from(&self, name: &str, source: &Path) -> Result<()> {

@@ -912,7 +912,16 @@ fn export_session_inner(ctx: &Ctx, params: ExportSessionParams, authorized: bool
     })();
 
     if outcome.is_err() && created {
-        let _ = std::fs::remove_dir_all(&dest);
+        // Remove the partial export relative to the parent descriptor: a swap of
+        // `dest` for a symlink must not delete the link target.
+        if let (Some(parent), Some(name)) = (dest.parent(), dest.file_name()) {
+            if let (Ok(parent_dir), Some(name)) = (
+                scrapelens_core::store::PrivateDir::open(parent),
+                name.to_str(),
+            ) {
+                let _ = parent_dir.remove_all(name);
+            }
+        }
     }
     outcome
 }

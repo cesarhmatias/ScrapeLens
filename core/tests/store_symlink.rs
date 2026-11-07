@@ -297,3 +297,30 @@ fn racing_symlink_and_creation_never_escapes_or_masks_the_link() {
         }
     }
 }
+
+#[test]
+fn copy_tree_from_copies_regular_files_and_refuses_a_symlink() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("source");
+    fs::create_dir_all(source.join("attachments")).unwrap();
+    fs::write(source.join("session.json"), b"{}").unwrap();
+    fs::write(source.join("attachments/a.bin"), b"A").unwrap();
+
+    let destination = root.path().join("destination");
+    let private = scrapelens_core::store::PrivateDir::open(&destination).unwrap();
+    private.copy_tree_from(&source).unwrap();
+    assert_eq!(fs::read(destination.join("session.json")).unwrap(), b"{}");
+    assert_eq!(
+        fs::read(destination.join("attachments/a.bin")).unwrap(),
+        b"A"
+    );
+
+    let other = root.path().join("other");
+    fs::create_dir(&other).unwrap();
+    std::os::unix::fs::symlink(destination.join("session.json"), other.join("link.json")).unwrap();
+    let refused = root.path().join("refused");
+    let private = scrapelens_core::store::PrivateDir::open(&refused).unwrap();
+    let error = private.copy_tree_from(&other).unwrap_err();
+    assert!(error.to_string().contains("symbolic link"), "{error}");
+    assert!(!refused.join("link.json").exists());
+}

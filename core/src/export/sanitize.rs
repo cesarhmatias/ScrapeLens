@@ -97,12 +97,11 @@ impl SanitizedExport {
                 });
             }
         }
+        // Cleanup relative to the directory descriptor: a name swapped for a
+        // symlink between the checks and here cannot delete outside `dir`.
+        let private = store::PrivateDir::open(dir)?;
         for name in [store::CDP_EVENTS_FILE, store::NETLOG_FILE] {
-            let path = dir.join(name);
-            if path.exists() {
-                std::fs::remove_file(&path)
-                    .map_err(|error| crate::error::CoreError::io(&path, error))?;
-            }
+            private.remove_all(name)?;
         }
         store::write_session_dir(&self.bundle, dir)
     }

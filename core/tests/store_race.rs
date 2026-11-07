@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use scrapelens_core::store::{ensure_private_dir, write_session_dir};
+use scrapelens_core::store::{ensure_private_dir, write_session_dir, PrivateDir};
 
 /// Toggles `name` between a real directory (ours) and a symlink to `target`.
 /// If a call recreates `name` while it is parked, that intruder is discarded and
@@ -158,5 +158,36 @@ fn r5_session_write_through_a_swapped_destination_never_leaks() {
         "the race never produced a successful write (errors={errors})"
     );
     assert!(swaps > 0, "the swapper never swapped the destination");
+    let _ = fs::remove_dir_all(root.path());
+}
+
+/// L2: cleanup must act on the descriptor, not on the path again. A directory
+/// swapped for a symlink after it was opened may lose the entry inside the
+/// ORIGINAL directory, never the link target.
+#[test]
+fn remove_all_through_a_swapped_directory_never_deletes_outside() {
+    let root = tempfile::tempdir().unwrap();
+    let inside = root.path().join("session");
+    let outside = root.path().join("outside");
+    fs::create_dir(&inside).unwrap();
+    fs::create_dir(&outside).unwrap();
+    fs::write(inside.join("cdp-events.jsonl"), b"ours").unwrap();
+    fs::write(outside.join("cdp-events.jsonl"), b"KEEP").unwrap();
+
+    let private = PrivateDir::open(&inside).unwrap();
+    let moved = root.path().join("session.moved");
+    fs::rename(&inside, &moved).unwrap();
+    symlink(&outside, &inside).unwrap();
+    private.remove_all("cdp-events.jsonl").unwrap();
+
+    assert_eq!(
+        fs::read(outside.join("cdp-events.jsonl")).unwrap(),
+        b"KEEP",
+        "cleanup followed the link to the outside directory"
+    );
+    assert!(!moved.join("cdp-events.jsonl").exists());
+
+    fs::remove_file(&inside).unwrap();
+    fs::rename(&moved, &inside).unwrap();
     let _ = fs::remove_dir_all(root.path());
 }
