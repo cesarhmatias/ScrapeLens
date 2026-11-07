@@ -146,20 +146,25 @@ Details: [`docs/22-proxy.md`](docs/22-proxy.md).
 
 The `scrapelens-mcp` binary implements the **Model Context Protocol (MCP)** over `stdio`, allowing AI assistants (Claude Desktop, Cursor, OpenCode, etc.) to analyze captures and run reverse-engineering sessions with protection against accidental leakage of secrets.
 
-### Building and configuring MCP
+### Configuring an MCP client (no build needed)
 
-```sh
-cargo build --manifest-path mcp/Cargo.toml --release
-```
+The MCP server ships inside the ScrapeLens App, with the same version (0.1.3). Point the client at the App's own executable with the `mcp` subcommand; nothing has to be compiled.
 
-Example configuration (`mcpServers`):
+| Package | Command the client runs |
+|---|---|
+| macOS `ScrapeLens.app` | `/Applications/ScrapeLens.app/Contents/MacOS/scrapelens mcp --sessions-dir <dir>` |
+| Linux `.deb` | `/usr/bin/scrapelens mcp --sessions-dir <dir>` |
+| Linux AppImage | `/path/to/ScrapeLens_0.1.3_amd64.AppImage mcp --sessions-dir <dir>` |
+
+Example for macOS (`mcpServers`):
 
 ```json
 {
   "mcpServers": {
     "scrapelens": {
-      "command": "/path/to/ScrapeLens/mcp/target/release/scrapelens-mcp",
+      "command": "/Applications/ScrapeLens.app/Contents/MacOS/scrapelens",
       "args": [
+        "mcp",
         "--sessions-dir",
         "/Users/you/Library/Application Support/app.scrapelens.desktop/sessions"
       ]
@@ -167,6 +172,14 @@ Example configuration (`mcpServers`):
   }
 }
 ```
+
+On Linux the sessions folder is `~/.local/share/app.scrapelens.desktop/sessions` (or `$XDG_DATA_HOME/app.scrapelens.desktop/sessions`). For the AppImage, when FUSE is not available, give the client the environment variable `APPIMAGE_EXTRACT_AND_RUN=1`.
+
+- The server writes the protocol to stdout only; diagnostics go to stderr.
+- `start_capture` asks the user to confirm in the client. A client that cannot ask is refused unless the server is started with `--allow-unconfirmed-capture`; use it only when you accept that a capture may start without confirmation.
+- `start_capture` opens a visible Chrome unless the call sets `"headless": true`.
+
+A developer build of the standalone server is still available with `cargo build --manifest-path mcp/Cargo.toml --release`; the packages do not need it.
 
 ### The 15 Tools of `scrapelens-mcp`
 
