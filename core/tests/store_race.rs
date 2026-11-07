@@ -102,103 +102,117 @@ fn bundle() -> scrapelens_core::SessionBundle {
 /// R2: an ancestor already checked is renamed to a symlink while missing
 /// components are being created. Every `mkdir` must follow the descriptor of
 /// the original directory; nothing may appear in the link target.
+///
+/// Each round uses a fresh, small ancestor and its own swapper. The test runs
+/// rounds until [`MIN_SWAPS`] real swaps happened (or the cap), so a loaded
+/// machine cannot end it with zero swaps and prove nothing.
 #[test]
 fn r2_mkdir_through_a_swapped_ancestor_never_lands_outside() {
     let root = tempfile::tempdir().unwrap();
-    let base = root.path().join("r2/a");
-    let outside = root.path().join("r2/outside");
-    fs::create_dir_all(&base).unwrap();
-    fs::create_dir_all(&outside).unwrap();
-
-    let stop = Arc::new(AtomicBool::new(false));
-    let swaps = Arc::new(AtomicU64::new(0));
-    let handle = swapper(stop.clone(), base.clone(), outside.clone(), swaps.clone());
     let started = Instant::now();
-    let (mut ok, mut errors) = (0u64, 0u64);
-    let mut index = 0u64;
-    while (swaps.load(Ordering::Relaxed) < MIN_SWAPS || ok == 0) && started.elapsed() < RACE_CAP {
+    let (mut ok, mut swaps, mut index) = (0u64, 0u64, 0u64);
+    while (swaps < MIN_SWAPS || ok == 0) && started.elapsed() < RACE_CAP {
         index += 1;
-        let destination = base.join(format!("c{index}/d/e/f/session"));
-        match ensure_private_dir(&destination) {
-            Ok(()) => ok += 1,
-            Err(_) => errors += 1,
+        let base = root.path().join(format!("a{index}"));
+        let outside = root.path().join(format!("out{index}"));
+        fs::create_dir_all(&base).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let planted = Arc::new(AtomicU64::new(0));
+        let handle = swapper(stop.clone(), base.clone(), outside.clone(), planted.clone());
+        let round = Instant::now();
+        let mut calls = 0u64;
+        // At least two calls, and keep going until the swapper really swapped.
+        while (planted.load(Ordering::Relaxed) == 0 || calls < 2)
+            && round.elapsed() < Duration::from_secs(3)
+        {
+            calls += 1;
+            let destination = base.join(format!("c{calls}/d/e/f/session"));
+            if ensure_private_dir(&destination).is_ok() {
+                ok += 1;
+            }
+            assert_eq!(
+                outside_entries(&outside),
+                Vec::<String>::new(),
+                "a mkdir/chmod escaped to the symlink target"
+            );
         }
-        assert_eq!(
-            outside_entries(&outside),
-            Vec::<String>::new(),
-            "a mkdir/chmod escaped to the symlink target"
-        );
+        stop.store(true, Ordering::Relaxed);
+        let _ = handle.join().unwrap();
+        swaps += planted.load(Ordering::Relaxed);
+        assert_eq!(outside_entries(&outside), Vec::<String>::new());
+        let _ = fs::remove_dir_all(&base);
+        let _ = fs::remove_dir_all(&outside);
     }
-    stop.store(true, Ordering::Relaxed);
-    let total = handle.join().unwrap();
-    assert_eq!(outside_entries(&outside), Vec::<String>::new());
     assert!(
-        swaps.load(Ordering::Relaxed) >= MIN_SWAPS,
-        "the race ended without {} real swaps ({} total, {errors} errors, {:?})",
-        MIN_SWAPS,
-        total,
+        swaps >= MIN_SWAPS,
+        "the race ended without {MIN_SWAPS} real swaps ({swaps} in {:?})",
         started.elapsed()
     );
-    assert!(
-        ok > 0,
-        "the race never produced a successful creation (errors={errors})"
-    );
+    assert!(ok > 0, "the race never produced a successful creation");
     let _ = fs::remove_dir_all(root.path());
 }
 
 /// R5: the final session directory is swapped for a symlink between the
 /// creation/check and the write. `session.json` and the attachments must go to
-/// the directory the descriptor holds, never to the link target.
+/// the directory the descriptor holds, never to the link target. Fresh
+/// destination and swapper per round; runs until [`MIN_SWAPS`] real swaps.
 #[test]
 fn r5_session_write_through_a_swapped_destination_never_leaks() {
     let root = tempfile::tempdir().unwrap();
-    let parent = root.path().join("r5");
-    let outside = root.path().join("r5out");
-    fs::create_dir_all(&parent).unwrap();
-    fs::create_dir_all(&outside).unwrap();
-    let destination = parent.join("session");
-    fs::create_dir_all(&destination).unwrap();
     let bundle = bundle();
-
-    let stop = Arc::new(AtomicBool::new(false));
-    let swaps = Arc::new(AtomicU64::new(0));
-    let handle = swapper(
-        stop.clone(),
-        destination.clone(),
-        outside.clone(),
-        swaps.clone(),
-    );
     let started = Instant::now();
-    let (mut ok, mut errors) = (0u64, 0u64);
-    while (swaps.load(Ordering::Relaxed) < MIN_SWAPS || ok == 0) && started.elapsed() < RACE_CAP {
-        match write_session_dir(&bundle, &destination) {
-            Ok(()) => ok += 1,
-            Err(_) => errors += 1,
+    let (mut ok, mut swaps, mut index) = (0u64, 0u64, 0u64);
+    while (swaps < MIN_SWAPS || ok == 0) && started.elapsed() < RACE_CAP {
+        index += 1;
+        let parent = root.path().join(format!("p{index}"));
+        let outside = root.path().join(format!("out{index}"));
+        fs::create_dir_all(&parent).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let destination = parent.join("session");
+        fs::create_dir_all(&destination).unwrap();
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let planted = Arc::new(AtomicU64::new(0));
+        let handle = swapper(
+            stop.clone(),
+            destination.clone(),
+            outside.clone(),
+            planted.clone(),
+        );
+        let round = Instant::now();
+        let mut calls = 0u64;
+        while (planted.load(Ordering::Relaxed) == 0 || calls < 2)
+            && round.elapsed() < Duration::from_secs(3)
+        {
+            calls += 1;
+            if write_session_dir(&bundle, &destination).is_ok() {
+                ok += 1;
+            }
+            assert_eq!(
+                outside_entries(&outside),
+                Vec::<String>::new(),
+                "session files escaped to the symlink target"
+            );
         }
+        stop.store(true, Ordering::Relaxed);
+        let _ = handle.join().unwrap();
+        swaps += planted.load(Ordering::Relaxed);
         assert_eq!(
             outside_entries(&outside),
             Vec::<String>::new(),
-            "session files escaped to the symlink target"
+            "the symlink target received session files"
         );
+        let _ = fs::remove_dir_all(&parent);
+        let _ = fs::remove_dir_all(&outside);
     }
-    stop.store(true, Ordering::Relaxed);
-    let total = handle.join().unwrap();
-    assert_eq!(
-        outside_entries(&outside),
-        Vec::<String>::new(),
-        "the symlink target received session files"
-    );
     assert!(
-        swaps.load(Ordering::Relaxed) >= MIN_SWAPS,
-        "the race ended without {} real swaps ({} total, {errors} errors, {:?})",
-        MIN_SWAPS,
-        total,
+        swaps >= MIN_SWAPS,
+        "the race ended without {MIN_SWAPS} real swaps ({swaps} in {:?})",
         started.elapsed()
     );
-    assert!(
-        ok > 0,
-        "the race never produced a successful write (errors={errors})"
-    );
+    assert!(ok > 0, "the race never produced a successful write");
     let _ = fs::remove_dir_all(root.path());
 }
 
