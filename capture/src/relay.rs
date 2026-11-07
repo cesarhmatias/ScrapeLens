@@ -2361,7 +2361,9 @@ mod wire_tests {
         );
         assert!(stats.checks >= 3, "{stats:?}");
         assert_eq!(stats.refused, 2, "only the two stranger attempts are refused");
-        assert!(stats.max_nanos < 200_000_000, "peer check max {} ns", stats.max_nanos);
+        // A miss may use the confirmation budget. A hit does not, and this cap
+        // is only there so a stuck check cannot pass.
+        assert!(stats.max_nanos < 1_500_000_000, "peer check max {} ns", stats.max_nanos);
     }
 
     /// The reviewer's case: a stranger writes the SOCKS request, half-closes, and keeps
@@ -2430,7 +2432,9 @@ mod wire_tests {
         let cancelled = TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())).unwrap();
         cancelled.shutdown(Shutdown::Both).unwrap();
         drop(cancelled);
-        thread::sleep(Duration::from_millis(200));
+        // The check retries a socket that has already gone. Wait out that
+        // budget before deciding the cancel stayed quiet.
+        thread::sleep(Duration::from_millis(1200));
         assert_eq!(
             relay.failures().len(),
             failure_count,

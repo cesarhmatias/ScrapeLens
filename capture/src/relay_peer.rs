@@ -32,28 +32,53 @@ pub(crate) fn admit(peer_port: u16, listen_port: u16, owner: u32) -> Result<(), 
     }
 }
 
+/// How long a miss may be retried. A hit returns on the first look.
+/// 400 ms sits inside the 250–500 ms cap: long enough for a busy process
+/// table or a descriptor that appears just after accept, and short enough
+/// that one connection cannot sit forever.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) const CONFIRM_BUDGET: std::time::Duration = std::time::Duration::from_millis(400);
+
+/// Retries `once` with backoff until [`CONFIRM_BUDGET`] is spent.
+/// The sleep stays on this thread. The accept loop admits each connection
+/// on its own thread, so one slow check does not hold the next.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn retry_for(mut once: impl FnMut() -> Result<(), &'static str>) -> Result<(), &'static str> {
+    let started = std::time::Instant::now();
+    let mut delay = std::time::Duration::from_millis(1);
+    let cap = std::time::Duration::from_millis(32);
+    let mut last;
+    loop {
+        match once() {
+            Ok(()) => return Ok(()),
+            Err(reason) => last = reason,
+        }
+        let elapsed = started.elapsed();
+        if elapsed >= CONFIRM_BUDGET {
+            return Err(last);
+        }
+        let pause = delay.min(CONFIRM_BUDGET - elapsed);
+        if pause.is_zero() {
+            return Err(last);
+        }
+        std::thread::sleep(pause);
+        delay = delay.saturating_mul(2).min(cap);
+    }
+}
+
 #[cfg(target_os = "linux")]
 mod linux {
-    use std::time::Duration;
-
     const NOT_BROWSER: &str = "the client process is not the capture browser";
     const UNCONFIRMED: &str = "the client process could not be confirmed";
 
     pub(crate) fn admit(peer_port: u16, listen_port: u16, owner: u32) -> Result<(), &'static str> {
         // The socket can show up in /proc a moment after accept, and a busy
-        // /proc/net/tcp read can list one row twice. Retry a miss, then fail closed.
-        let mut last = UNCONFIRMED;
-        for attempt in 0..5 {
-            match admit_once(peer_port, listen_port, owner) {
-                Ok(()) => return Ok(()),
-                Err(reason) => {
-                    last = reason;
-                    if attempt + 1 < 5 {
-                        std::thread::sleep(Duration::from_millis(1));
-                    }
-                }
-            }
-        }
+        // /proc read can fail or list one row twice. Spread the misses across
+        // the budget, then fail closed. A hit does not sleep.
+        let last = match super::retry_for(|| admit_once(peer_port, listen_port, owner)) {
+            Ok(()) => return Ok(()),
+            Err(reason) => reason,
+        };
         // The browser tree missed this socket. A row that is gone, or that no
         // process of the socket's uid still holds, cannot read a tunnel. An
         // unreadable process of another uid is not that holder. A same-uid
@@ -385,20 +410,12 @@ mod macos {
 
     pub(crate) fn admit(peer_port: u16, listen_port: u16, owner: u32) -> Result<(), &'static str> {
         // A helper can connect in the same instant it appears in the process tree.
-        // Retry a miss the way the Linux inode lookup does, then still fail closed.
-        let mut last = NOT_BROWSER;
-        for attempt in 0..5 {
-            match admit_once(peer_port, listen_port, owner) {
-                Ok(()) => return Ok(()),
-                Err(reason) => {
-                    last = reason;
-                    if attempt + 1 < 5 {
-                        std::thread::sleep(std::time::Duration::from_millis(1));
-                        continue;
-                    }
-                }
-            }
-        }
+        // Spread the misses across the same budget as Linux, then still fail closed.
+        // A hit does not sleep.
+        let last = match super::retry_for(|| admit_once(peer_port, listen_port, owner)) {
+            Ok(()) => return Ok(()),
+            Err(reason) => reason,
+        };
         // The owner tree does not have this socket. A stranger that is still
         // reading has it open somewhere else. A Chrome cancel has already dropped
         // the descriptor, so nobody can read a tunnel reply.
@@ -589,5 +606,186 @@ mod macos {
             return Err(());
         }
         Ok(u32::from_le_bytes(info[OFF_PPID..OFF_PPID + 4].try_into().unwrap()))
+    }
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod tests {
+    use std::net::{Shutdown, TcpListener, TcpStream};
+    use std::process::Command;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    use super::{admit, ALREADY_CLOSED, CONFIRM_BUDGET};
+
+    fn loopback_pair() -> (TcpStream, TcpStream, u16, u16) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let listen_port = listener.local_addr().unwrap().port();
+        let client = TcpStream::connect(("127.0.0.1", listen_port)).unwrap();
+        let (accepted, _) = listener.accept().unwrap();
+        let peer_port = client.local_addr().unwrap().port();
+        (client, accepted, peer_port, listen_port)
+    }
+
+    struct StopSleep(Option<std::process::Child>);
+
+    impl Drop for StopSleep {
+        fn drop(&mut self) {
+            if let Some(child) = self.0.as_mut() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+    }
+
+    struct Burners {
+        stop: Arc<AtomicBool>,
+        joins: Vec<thread::JoinHandle<()>>,
+    }
+
+    impl Drop for Burners {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::Relaxed);
+            for handle in self.joins.drain(..) {
+                let _ = handle.join();
+            }
+        }
+    }
+
+    impl Burners {
+        fn start() -> Self {
+            let stop = Arc::new(AtomicBool::new(false));
+            let n = thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+            let mut joins = Vec::with_capacity(n);
+            for _ in 0..n {
+                let stop = Arc::clone(&stop);
+                joins.push(thread::spawn(move || {
+                    while !stop.load(Ordering::Relaxed) {
+                        let mut x = 0x1234_5678_9abc_def0u64;
+                        for _ in 0..50_000 {
+                            x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+                        }
+                        std::hint::black_box(x);
+                    }
+                }));
+            }
+            thread::sleep(Duration::from_millis(20));
+            Self { stop, joins }
+        }
+    }
+
+    fn refused_while_held(verdict: Result<(), &'static str>) -> bool {
+        match verdict {
+            Ok(()) => false,
+            Err(ALREADY_CLOSED) => false,
+            Err(_) => true,
+        }
+    }
+
+    #[test]
+    fn a_confirmed_owner_returns_before_the_retry_budget() {
+        let mut worst = Duration::ZERO;
+        for _ in 0..20 {
+            let (client, accepted, peer, listen) = loopback_pair();
+            let started = Instant::now();
+            let verdict = admit(peer, listen, std::process::id());
+            let elapsed = started.elapsed();
+            assert_eq!(verdict, Ok(()), "{verdict:?} after {elapsed:?}");
+            worst = worst.max(elapsed);
+            drop(client);
+            drop(accepted);
+        }
+        eprintln!("confirmed owner worst={worst:?} budget={CONFIRM_BUDGET:?}");
+        assert!(
+            worst < CONFIRM_BUDGET / 2,
+            "a hit waited {worst:?}; only a miss may use {CONFIRM_BUDGET:?}"
+        );
+    }
+
+    #[test]
+    fn twenty_held_sockets_are_admitted_while_the_cpu_is_busy() {
+        let _burn = Burners::start();
+        let mut worst = Duration::ZERO;
+        let mut refused = 0u32;
+        for i in 0..20 {
+            let (client, accepted, peer, listen) = loopback_pair();
+            let started = Instant::now();
+            let verdict = admit(peer, listen, std::process::id());
+            let elapsed = started.elapsed();
+            if verdict.is_err() {
+                refused += 1;
+                eprintln!("load admit {i} {verdict:?} after {elapsed:?}");
+            }
+            worst = worst.max(elapsed);
+            drop(client);
+            drop(accepted);
+        }
+        let (open_client, open_accepted, open_peer, open_listen) = loopback_pair();
+        let sleeper = Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        let sleeper = StopSleep(Some(sleeper));
+        let owner = sleeper.0.as_ref().unwrap().id();
+        let open = admit(open_peer, open_listen, owner);
+        let (fin_client, fin_accepted, fin_peer, fin_listen) = loopback_pair();
+        fin_client.shutdown(Shutdown::Write).unwrap();
+        let fin_started = Instant::now();
+        let fin = admit(fin_peer, fin_listen, owner);
+        let fin_elapsed = fin_started.elapsed();
+        eprintln!(
+            "load admits worst={worst:?} refused={refused} open={open:?} fin={fin:?} fin_elapsed={fin_elapsed:?}"
+        );
+        assert_eq!(refused, 0, "a socket this process holds was refused under load");
+        assert!(
+            refused_while_held(open),
+            "an open stranger was not refused: {open:?}"
+        );
+        assert!(
+            refused_while_held(fin),
+            "a half-closed stranger was not refused: {fin:?}"
+        );
+        assert!(
+            fin_elapsed >= Duration::from_millis(250),
+            "a stranger was refused before the budget: {fin_elapsed:?}"
+        );
+        assert!(
+            fin_elapsed < CONFIRM_BUDGET + Duration::from_secs(2),
+            "a stranger check did not stop: {fin_elapsed:?}"
+        );
+        drop(open_client);
+        drop(open_accepted);
+        drop(fin_client);
+        drop(fin_accepted);
+    }
+
+    #[test]
+    fn a_slow_miss_does_not_hold_up_another_connection() {
+        let (stranger_client, stranger_accepted, stranger_peer, stranger_listen) = loopback_pair();
+        let sleeper = Command::new("/bin/sleep").arg("30").spawn().unwrap();
+        let sleeper = StopSleep(Some(sleeper));
+        let owner = sleeper.0.as_ref().unwrap().id();
+        let started = Instant::now();
+        let slow = thread::spawn(move || {
+            let verdict = admit(stranger_peer, stranger_listen, owner);
+            (verdict, started.elapsed())
+        });
+        thread::sleep(Duration::from_millis(30));
+        let (client, accepted, peer, listen) = loopback_pair();
+        let fast_started = Instant::now();
+        let fast = admit(peer, listen, std::process::id());
+        let fast_elapsed = fast_started.elapsed();
+        let (slow_verdict, slow_elapsed) = slow.join().unwrap();
+        eprintln!("overlap fast={fast_elapsed:?} slow={slow_elapsed:?} {slow_verdict:?}");
+        assert_eq!(fast, Ok(()), "{fast:?}");
+        assert!(
+            fast_elapsed < CONFIRM_BUDGET / 2,
+            "another connection waited out the miss: {fast_elapsed:?}"
+        );
+        assert!(refused_while_held(slow_verdict), "{slow_verdict:?}");
+        assert!(slow_elapsed >= Duration::from_millis(250), "{slow_elapsed:?}");
+        drop(client);
+        drop(accepted);
+        drop(stranger_client);
+        drop(stranger_accepted);
     }
 }
