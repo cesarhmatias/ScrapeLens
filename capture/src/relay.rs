@@ -2786,13 +2786,25 @@ mod wire_tests {
             }
         }
         let sleeper = StopSleep(Some(sleeper));
-        let verdict = super::peer::admit(
-            server.peer_addr().unwrap(),
-            listener.local_addr().unwrap(),
-            sleeper.0.as_ref().unwrap().id(),
-            &super::peer::Peers::new(64),
-        );
-        assert_eq!(verdict, Err(super::peer::ALREADY_CLOSED), "{verdict:?}");
+        // The kernel releases the client socket's inode asynchronously, and a concurrent
+        // fork can hold a copy of the descriptor for a moment. Poll briefly instead of
+        // failing on the first look (review-013c flake, uid 1000).
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let verdict = super::peer::admit(
+                server.peer_addr().unwrap(),
+                listener.local_addr().unwrap(),
+                sleeper.0.as_ref().unwrap().id(),
+                &super::peer::Peers::new(64),
+            );
+            if verdict == Err(super::peer::ALREADY_CLOSED) {
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                panic!("the closed socket was not recognised: {verdict:?}");
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 
     /// A check thread that cannot start refuses its connection, and accepting goes on: a later
