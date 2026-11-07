@@ -34,6 +34,8 @@ COPY app/package.json app/package-lock.json app/
 RUN cd app && npm ci --no-audit --no-fund
 COPY core core
 COPY capture capture
+COPY recon recon
+COPY mcp mcp
 COPY adapters adapters
 COPY src-tauri src-tauri
 COPY app app

@@ -5,8 +5,6 @@ src-tauri/linux/out
 tests
 experiments
 outputs
-recon
-mcp
 testserver
 docs
 .git
