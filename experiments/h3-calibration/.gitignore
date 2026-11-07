@@ -1,0 +1,6 @@
+# Captures and TLS secrets from a calibration run.
+*.pcap
+*.pcapng
+*.keylog
+keys.log
+out/
