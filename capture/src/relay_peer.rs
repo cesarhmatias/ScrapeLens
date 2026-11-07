@@ -190,6 +190,8 @@ mod linux {
         scan(checks, || match client_once(client, listen) {
             Ok(None) => Err(super::ALREADY_CLOSED),
             Err(()) => Err(UNCONFIRMED),
+            // No owner (inode 0): the kernel has no process for this socket, so it is closed.
+            Ok(Some(row)) if row.inode == 0 => Err(super::ALREADY_CLOSED),
             Ok(Some(row)) => match uid_holds_inode(row.inode, row.uid) {
                 Ok(false) => Err(super::ALREADY_CLOSED),
                 Ok(true) => Err(held),
@@ -226,7 +228,10 @@ mod linux {
 
     fn find_client_inode(client: SocketAddr, listen: SocketAddr) -> Result<u64, &'static str> {
         match client_once(client, listen) {
-            Ok(Some(row)) => Ok(row.inode),
+            Ok(Some(row)) if row.inode != 0 => Ok(row.inode),
+            // No owner (inode 0): the kernel has no process for this socket, so it is closed,
+            // not a stranger (LOW 5). A non-root process cannot read the other owners' tables.
+            Ok(Some(_)) => Err(super::ALREADY_CLOSED),
             // TIME_WAIT and a socket that has already disappeared have no process.
             // A client that is still reading stays ESTABLISHED or FIN_WAIT and is listed.
             Ok(None) => Err(super::ALREADY_CLOSED),
