@@ -39,12 +39,12 @@ mod tests {
                 dumpable_behavior().expect("dumpable"),
                 DumpableBehavior::NotDumpable
             );
+            // OrbStack 7.2 publishes CoreDumping and omits Dumpable.
+            // PR_GET_DUMPABLE above is the check; a published line must be 0.
             let status = std::fs::read_to_string("/proc/self/status").expect("status");
-            let line = status
-                .lines()
-                .find(|line| line.starts_with("Dumpable:"))
-                .expect("Dumpable");
-            assert!(line.ends_with('0'), "{line}");
+            if let Some(line) = status.lines().find(|line| line.starts_with("Dumpable:")) {
+                assert!(line.ends_with('0'), "{line}");
+            }
         }
     }
 }
