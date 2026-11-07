@@ -1964,10 +1964,16 @@ mod wire_tests {
         // The relay closed its listener when it was dropped, so the port can be bound again at
         // once. A connect is not a reliable test: another test may take the port, and a free
         // ephemeral port can connect to itself.
-        assert!(
-            TcpListener::bind((Ipv4Addr::LOCALHOST, port)).is_ok(),
-            "the relay still holds its port after it was dropped"
-        );
+        // Another test can take the port in the instant after the drop: retry for a while. A
+        // listener that the drop did not close keeps the port for the whole window.
+        let started = std::time::Instant::now();
+        while TcpListener::bind((Ipv4Addr::LOCALHOST, port)).is_err() {
+            assert!(
+                started.elapsed() < Duration::from_millis(500),
+                "the relay still holds its port after it was dropped"
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
     }
 
     #[test]
