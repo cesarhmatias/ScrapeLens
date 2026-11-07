@@ -94,11 +94,13 @@ owned by others must be agreed on the project channel.
 - Changed behavior? Update the test and the documentation in the same PR/commit.
 - Run `cargo fmt`, `cargo clippy --offline --all-targets` and the tests of the
   touched crate before submitting.
-- Do not publish releases without the maintainer's authorization. The local build is **not
-  signed and not notarized**; the project does not plan Developer ID signing or notarization.
-- Known limitations that must not regress: `--remote-allow-origins=*` on the
-  CDP (loopback/ephemeral port/capture window), CDP bodies `unavailable`,
-  capture of one target per session, no validated Intel build.
+- Do not publish releases without the maintainer's authorization. The local build is signed
+  with the self-signed identity `ScrapeLens Local Signing`, not Developer ID, and is **not
+  notarized**; the project does not plan Developer ID signing or notarization.
+- Known limitations that must not regress: the launcher must not pass
+  `--remote-allow-origins` (CDP stays on the pipe by default; `SCRAPELENS_CDP_TRANSPORT=port`
+  opens loopback only, during capture, and accepts clients without `Origin`); no validated
+  Intel build.
 - **Published history is not rewritten.** Do not force-push to `main`. The only
   exception is removing a real secret, and only with the maintainer's approval.
   Old paths stay in the history.
