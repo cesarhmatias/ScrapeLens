@@ -126,6 +126,24 @@ const MAX_CHECKS: usize = 64;
 /// here for at most a few tree generations, never in a tunnel slot, so a local flood cannot take
 /// the browser's own tunnels. Beyond this, new connections are refused.
 const MAX_PENDING_CHECKS: usize = 1024;
+/// The fewest waiters the relay keeps, whatever the descriptor limit says.
+const MIN_PENDING_CHECKS: usize = 64;
+
+/// The waiting-connection limit for this process: a quarter of the descriptor soft limit, so the
+/// waiters cannot use the descriptors the browser and its tunnels need. A process whose limit
+/// cannot be read keeps the largest limit.
+fn pending_limit() -> usize {
+    #[cfg(unix)]
+    {
+        let mut limit = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+        // SAFETY: `limit` is a valid `rlimit` for getrlimit to write into.
+        if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) } == 0 {
+            let quarter = usize::try_from(limit.rlim_cur / 4).unwrap_or(usize::MAX);
+            return quarter.clamp(MIN_PENDING_CHECKS, MAX_PENDING_CHECKS);
+        }
+    }
+    MAX_PENDING_CHECKS
+}
 const MAX_FAILURES: usize = 32;
 
 /// Why the relay could not start. Messages carry `scheme://host:port` at most, never
@@ -246,7 +264,7 @@ impl Relay {
             owner: Arc::clone(&owner),
             listen,
             checks: peer::Peers::new(MAX_CHECKS),
-            pending: peer::Gate::new(MAX_PENDING_CHECKS),
+            pending: peer::Pending::new(pending_limit()),
             peer_checks: Arc::clone(&peer_checks),
             peer_refused: Arc::clone(&peer_refused),
             peer_max_nanos: Arc::clone(&peer_max_nanos),
@@ -370,7 +388,7 @@ struct Shared {
     /// The owner-tree view and the post-miss checks; see `MAX_CHECKS`.
     checks: Arc<peer::Peers>,
     /// Connections waiting for their check; see `MAX_PENDING_CHECKS`.
-    pending: Arc<peer::Gate>,
+    pending: Arc<peer::Pending>,
     peer_checks: Arc<AtomicU64>,
     peer_refused: Arc<AtomicU64>,
     peer_max_nanos: Arc<AtomicU64>,
@@ -455,7 +473,7 @@ impl Shared {
     /// becomes success. An empty cancel is not shown to the user. Neither is a socket
     /// that no process still holds: that peer cannot read a tunnel. Unread bytes from
     /// a process that is still there, including after FIN, are a refusal.
-    fn admit(&self, client: &TcpStream) -> Admission {
+    fn admit(&self, client: &TcpStream, cancel: &AtomicBool) -> Admission {
         let owner = self.owner.load(Ordering::SeqCst);
         let client_addr = match client.peer_addr() {
             Ok(addr) => addr,
@@ -469,7 +487,7 @@ impl Shared {
             }
         };
         let started = std::time::Instant::now();
-        let verdict = peer::admit(client_addr, self.listen, owner, &self.checks);
+        let verdict = peer::admit_cancellable(client_addr, self.listen, owner, &self.checks, cancel);
         let nanos = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
         self.peer_checks.fetch_add(1, Ordering::Relaxed);
         let mut current = self.peer_max_nanos.load(Ordering::Relaxed);
@@ -565,37 +583,45 @@ fn accept_loop(listener: TcpListener, stop: Arc<AtomicBool>, shared: Shared) {
         match listener.accept() {
             Ok((client, _)) => {
                 let _ = client.set_nonblocking(false);
-                // The connection waits for its check on its own slot, not a tunnel slot.
-                let Some(pending) = peer::Gate::try_acquire(&shared.pending) else {
-                    shared.fail("too many connections".to_string());
-                    let _ = client.shutdown(Shutdown::Both);
-                    continue;
-                };
-                let shared = shared.clone();
-                thread::spawn(move || {
-                    let _tracked_client = shared.track(&client);
-                    let verdict = shared.admit(&client);
+                // The connection waits for its check on its own slot, not a tunnel slot. At the
+                // limit the oldest waiter is cancelled to make room: the newest arrival is kept.
+                let (ticket, evicted) = shared.pending.enter();
+                if evicted {
+                    shared.fail("too many connections waiting for their check; the oldest was dropped".to_string());
+                }
+                let pending = Arc::clone(&shared.pending);
+                let waiting = Arc::clone(&ticket);
+                let worker = shared.clone();
+                let spawned = thread::Builder::new().spawn(move || {
+                    let _tracked_client = worker.track(&client);
+                    let verdict = worker.admit(&client, &ticket.cancelled);
                     // The check is over: its waiting slot is free before any tunnel starts.
-                    drop(pending);
+                    worker.pending.leave(&ticket);
                     match verdict {
                         Admission::Admitted => {
-                            if !shared.try_acquire() {
-                                shared.fail("too many connections".to_string());
+                            if !worker.try_acquire() {
+                                worker.fail("too many connections".to_string());
                                 let _ = client.shutdown(Shutdown::Both);
                                 return;
                             }
-                            let _slot = ClientSlot(shared.clone());
-                            handle_client(client, shared);
+                            let _slot = ClientSlot(worker.clone());
+                            handle_client(client, worker);
                         }
                         Admission::QuietClose => {
                             let _ = client.shutdown(Shutdown::Both);
                         }
                         Admission::Refused(reason) => {
-                            shared.fail(reason.to_string());
+                            worker.fail(reason.to_string());
                             let _ = client.shutdown(Shutdown::Both);
                         }
                     }
                 });
+                if spawned.is_err() {
+                    // No thread for this connection: refuse it, and keep accepting. The closure
+                    // held the client, so dropping it closes the connection.
+                    pending.leave(&waiting);
+                    shared.fail("the relay could not start a check thread".to_string());
+                }
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => thread::sleep(ACCEPT_POLL),
             Err(_) => thread::sleep(ACCEPT_POLL),

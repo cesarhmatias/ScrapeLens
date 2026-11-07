@@ -16,8 +16,9 @@
 //! under the owner. The cost of a flood is therefore the number of generations, not the
 //! number of connections, and a miss ends after [`GENERATIONS`] of them.
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -129,6 +130,55 @@ struct Tree {
     view: Option<Arc<View>>,
 }
 
+/// One connection waiting for its check. `cancelled` is set when a newer arrival needs its slot.
+pub(crate) struct Ticket {
+    pub(crate) cancelled: AtomicBool,
+}
+
+/// The connections that wait for their check, oldest first, bounded by `limit`. At the limit the
+/// oldest waiter is cancelled and its slot taken: the newest arrival is the one a flood cannot
+/// have held out longer than the others. A cancelled waiter refuses itself on its next wakeup.
+pub(crate) struct Pending {
+    limit: usize,
+    order: Mutex<VecDeque<Arc<Ticket>>>,
+}
+
+impl Pending {
+    pub(crate) fn new(limit: usize) -> Arc<Pending> {
+        Arc::new(Pending { limit: limit.max(1), order: Mutex::new(VecDeque::new()) })
+    }
+
+    /// Takes a slot for a new waiter. Returns its ticket, and whether the oldest waiter was
+    /// cancelled to make room.
+    pub(crate) fn enter(&self) -> (Arc<Ticket>, bool) {
+        let mut order = self.order.lock().unwrap_or_else(|poison| poison.into_inner());
+        let mut evicted = false;
+        if order.len() >= self.limit {
+            if let Some(oldest) = order.pop_front() {
+                oldest.cancelled.store(true, Ordering::SeqCst);
+                evicted = true;
+            }
+        }
+        let ticket = Arc::new(Ticket { cancelled: AtomicBool::new(false) });
+        order.push_back(Arc::clone(&ticket));
+        (ticket, evicted)
+    }
+
+    /// Frees the slot of a waiter that has finished. A waiter that was already cancelled has no
+    /// slot left, and nothing is removed.
+    pub(crate) fn leave(&self, ticket: &Arc<Ticket>) {
+        let mut order = self.order.lock().unwrap_or_else(|poison| poison.into_inner());
+        if let Some(at) = order.iter().position(|waiting| Arc::ptr_eq(waiting, ticket)) {
+            order.remove(at);
+        }
+    }
+}
+
+/// How often a waiting connection looks at its cancel flag. Short enough that a cancelled waiter
+/// is refused within a few milliseconds, long enough that a waiter does not spin.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+const CANCEL_SLICE: Duration = Duration::from_millis(20);
+
 /// The state every connection of one relay shares: the owner-tree view, and the bound on
 /// the checks that read the process table one connection at a time (after a miss).
 pub(crate) struct Peers {
@@ -175,6 +225,7 @@ impl Peers {
         deadline: Instant,
         window: Instant,
         scan: fn(u32, Instant) -> Result<HashSet<Tuple>, ()>,
+        cancel: &AtomicBool,
     ) -> Option<Arc<View>> {
         let mut tree = self.tree.lock().ok()?;
         let need = tree.started + 1;
@@ -196,38 +247,51 @@ impl Peers {
                 continue;
             }
             let now = Instant::now();
-            if now >= deadline {
+            if now >= deadline || cancel.load(Ordering::SeqCst) {
                 return None;
             }
-            tree = self.moved.wait_timeout(tree, deadline - now).ok()?.0;
+            tree = self.moved.wait_timeout(tree, (deadline - now).min(CANCEL_SLICE)).ok()?.0;
         }
     }
 }
 
 /// `owner` is the browser pid published by the capture. Zero means it is not known yet.
 /// `client` is the address the relay sees for the connection, `listen` the relay's own.
-pub(crate) fn admit(
+pub(crate) fn admit_cancellable(
     client: SocketAddr,
     listen: SocketAddr,
     owner: u32,
     peers: &Arc<Peers>,
+    cancel: &AtomicBool,
 ) -> Result<(), &'static str> {
     if owner == 0 {
         return Err("the capture browser is not running yet");
     }
     #[cfg(target_os = "linux")]
     {
-        linux::admit(client, listen, owner, peers)
+        linux::admit(client, listen, owner, peers, cancel)
     }
     #[cfg(target_os = "macos")]
     {
-        macos::admit(client, listen, owner, peers)
+        macos::admit(client, listen, owner, peers, cancel)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
-        let _ = (client, listen, owner, peers);
+        let _ = (client, listen, owner, peers, cancel);
         Err("the client process could not be confirmed")
     }
+}
+
+/// A check that nobody cancels. Tests use it; the relay passes its waiter's flag.
+#[cfg(test)]
+pub(crate) fn admit(
+    client: SocketAddr,
+    listen: SocketAddr,
+    owner: u32,
+    peers: &Arc<Peers>,
+) -> Result<(), &'static str> {
+    static NEVER: AtomicBool = AtomicBool::new(false);
+    admit_cancellable(client, listen, owner, peers, &NEVER)
 }
 
 /// Checks one connection against the owner tree. A hit returns on the first generation that
@@ -243,6 +307,7 @@ fn in_tree(
     peers: &Peers,
     scan: fn(u32, Instant) -> Result<HashSet<Tuple>, ()>,
     direct: fn(u32, SocketAddr, SocketAddr, Instant) -> Result<bool, ()>,
+    cancel: &AtomicBool,
 ) -> Result<(), &'static str> {
     let wanted: Tuple = (
         SocketAddr::new(canonical(client.ip()), client.port()),
@@ -256,7 +321,13 @@ fn in_tree(
     let deadline = window;
     let mut last = UNCONFIRMED;
     for _ in 0..GENERATIONS {
-        let Some(view) = peers.fresh(owner, deadline, window, scan) else {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(UNCONFIRMED);
+        }
+        let Some(view) = peers.fresh(owner, deadline, window, scan, cancel) else {
+            if cancel.load(Ordering::SeqCst) {
+                return Err(UNCONFIRMED);
+            }
             // No generation finished in time: one direct look at the owner tree answers
             // this connection instead of another wait.
             return match direct(owner, client, listen, window) {
@@ -307,16 +378,27 @@ fn canonical(ip: IpAddr) -> IpAddr {
 mod linux {
     use std::collections::HashSet;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::time::Instant;
 
     use super::{canonical, checked, in_tree, Gate, Peers, Tuple, UNCONFIRMED};
 
-    pub(crate) fn admit(client: SocketAddr, listen: SocketAddr, owner: u32, peers: &Arc<Peers>) -> Result<(), &'static str> {
-        let last = match in_tree(client, listen, owner, peers, tree_tuples, direct_tree_has) {
+    pub(crate) fn admit(
+        client: SocketAddr,
+        listen: SocketAddr,
+        owner: u32,
+        peers: &Arc<Peers>,
+        cancel: &AtomicBool,
+    ) -> Result<(), &'static str> {
+        let last = match in_tree(client, listen, owner, peers, tree_tuples, direct_tree_has, cancel) {
             Ok(()) => return Ok(()),
             Err(reason) => reason,
         };
+        // A waiter cancelled for a newer arrival has no slot to keep: it is refused here.
+        if cancel.load(Ordering::SeqCst) {
+            return Err(UNCONFIRMED);
+        }
         // The browser tree does not list this socket. A row that is gone, or whose inode
         // column is zero, has no owner: the kernel keeps such a row only after the last
         // process released the socket, so nobody can read a tunnel reply and the connection
@@ -638,7 +720,8 @@ mod linux {
             let _accepted = listener.accept().unwrap();
             let client_addr = client.local_addr().unwrap();
             let mut sleeper = Command::new("/bin/sleep").arg("30").spawn().unwrap();
-            let verdict = admit(client_addr, listen, sleeper.id(), &Peers::new(8));
+            let never = std::sync::atomic::AtomicBool::new(false);
+            let verdict = admit(client_addr, listen, sleeper.id(), &Peers::new(8), &never);
             let _ = sleeper.kill();
             let _ = sleeper.wait();
             // A live stranger is refused. Under load its check can end at the window, which gives the
@@ -654,6 +737,7 @@ mod macos {
     use std::collections::HashSet;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use std::os::raw::c_void;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::time::Instant;
 
@@ -690,11 +774,21 @@ mod macos {
         fn proc_pidfdinfo(pid: i32, fd: i32, flavor: i32, buffer: *mut c_void, buffersize: i32) -> i32;
     }
 
-    pub(crate) fn admit(client: SocketAddr, listen: SocketAddr, owner: u32, peers: &Arc<Peers>) -> Result<(), &'static str> {
-        let last = match in_tree(client, listen, owner, peers, tree_tuples, direct_tree_has) {
+    pub(crate) fn admit(
+        client: SocketAddr,
+        listen: SocketAddr,
+        owner: u32,
+        peers: &Arc<Peers>,
+        cancel: &AtomicBool,
+    ) -> Result<(), &'static str> {
+        let last = match in_tree(client, listen, owner, peers, tree_tuples, direct_tree_has, cancel) {
             Ok(()) => return Ok(()),
             Err(reason) => reason,
         };
+        // A waiter cancelled for a newer arrival has no slot to keep: it is refused here.
+        if cancel.load(Ordering::SeqCst) {
+            return Err(UNCONFIRMED);
+        }
         // The owner tree does not list this socket. A stranger that is still reading has
         // it open somewhere else. A Chrome cancel has already dropped the descriptor, so
         // nobody can read a tunnel reply.
