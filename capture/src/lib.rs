@@ -332,7 +332,7 @@ fn run_inner(
     let resolver_rules = opts.allowlist.as_ref().map(allowlist::Allowlist::resolver_rules);
     // The proxy is prepared before Chrome starts, so a refused or unreachable proxy fails
     // the capture with its own message. The relay, if any, stops when this scope ends.
-    let proxy_plan = match &config.proxy {
+    let mut proxy_plan = match &config.proxy {
         Some(link) => {
             let allow: Option<relay::AllowFn> = opts.allowlist.clone().map(|al| {
                 Arc::new(move |host: &str, port: u16| al.permits_destination(host, port))
@@ -578,6 +578,11 @@ fn run_inner(
     socket.close();
     let exit = wait_or_kill(chrome.child_mut(), Duration::from_secs(20));
     chrome.disarm();
+    // The browser has exited: its relay goes now, before the session is written. The tunnels that
+    // are still moving get a short window; the counts and failures stay readable for the session.
+    if let Some(plan) = proxy_plan.as_mut() {
+        plan.close_after_browser(Duration::from_secs(1));
+    }
     let shutdown = ShutdownReport {
         browser_close: close_result.map(|_| ()),
         exit,

@@ -95,6 +95,13 @@ impl ProxyPlan {
     pub(crate) fn peer_check(&self) -> PeerCheck {
         self.relay.as_ref().map(Relay::peer_check).unwrap_or_default()
     }
+
+    /// Closes the relay once the browser has exited; see [`Relay::close_after_browser`].
+    pub(crate) fn close_after_browser(&mut self, grace: Duration) {
+        if let Some(relay) = self.relay.as_mut() {
+            relay.close_after_browser(grace);
+        }
+    }
 }
 
 /// How long the process check took, and how many connections it refused.
@@ -111,6 +118,14 @@ const ACCEPT_POLL: Duration = Duration::from_millis(10);
 /// Enough for a real Chrome (page, workers, service worker, utility and network service)
 /// without letting a local process open tunnels without bound.
 const MAX_CLIENTS: usize = 512;
+/// Process checks that read `/proc` or the process table one connection at a time, after the
+/// owner-tree view has missed it. A check takes one of these without waiting; without one it is
+/// refused. The owner tree itself is read once per generation, not once per connection.
+const MAX_CHECKS: usize = 64;
+/// Connections waiting for their check, separate from the tunnels above. A connection waits
+/// here for at most a few tree generations, never in a tunnel slot, so a local flood cannot take
+/// the browser's own tunnels. Beyond this, new connections are refused.
+const MAX_PENDING_CHECKS: usize = 1024;
 const MAX_FAILURES: usize = 32;
 
 /// Why the relay could not start. Messages carry `scheme://host:port` at most, never
@@ -203,8 +218,21 @@ impl Relay {
         };
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .map_err(|e| RelayError::Listen(e.kind().to_string()))?;
+        // The accept queue must hold every connection that may wait for its check. With the
+        // default backlog a local flood fills it, the browser's SYN is dropped, and its own
+        // retransmit delays the first byte by seconds (review-013 MEDIUM 3).
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            // SAFETY: the listener is bound and nothing accepts from it yet; listen(2) only
+            // sets the queue length. A failure keeps the backlog from bind(2).
+            unsafe {
+                libc::listen(listener.as_raw_fd(), MAX_PENDING_CHECKS as i32);
+            }
+        }
         listener.set_nonblocking(true).map_err(|e| RelayError::Listen(e.kind().to_string()))?;
-        let port = listener.local_addr().map_err(|e| RelayError::Listen(e.kind().to_string()))?.port();
+        let listen = listener.local_addr().map_err(|e| RelayError::Listen(e.kind().to_string()))?;
+        let port = listen.port();
 
         let client_limit = Arc::new(AtomicUsize::new(MAX_CLIENTS));
         let owner = Arc::new(AtomicU32::new(0));
@@ -223,7 +251,9 @@ impl Relay {
             clients: Arc::new(AtomicUsize::new(0)),
             client_limit: Arc::clone(&client_limit),
             owner: Arc::clone(&owner),
-            listen_port: port,
+            listen,
+            checks: peer::Peers::new(MAX_CHECKS),
+            pending: peer::Gate::new(MAX_PENDING_CHECKS),
             peer_checks: Arc::clone(&peer_checks),
             peer_refused: Arc::clone(&peer_refused),
             peer_max_nanos: Arc::clone(&peer_max_nanos),
@@ -291,6 +321,30 @@ impl Relay {
         self.sockets.lock().map(|list| list.len()).unwrap_or(0)
     }
 
+    /// Closes the relay once the browser that owned it has exited, before the session is written.
+    /// Nothing is admitted any more, and the tunnels still moving get `grace` to finish; the rest
+    /// are shut down. The counts and the failure list stay readable.
+    pub(crate) fn close_after_browser(&mut self, grace: Duration) {
+        self.owner.store(0, Ordering::SeqCst);
+        self.stop.store(true, Ordering::SeqCst);
+        let deadline = std::time::Instant::now() + grace;
+        while std::time::Instant::now() < deadline {
+            let open = self.sockets.lock().map(|list| list.len()).unwrap_or(0);
+            if open == 0 {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        if let Ok(sockets) = self.sockets.lock() {
+            for (_, socket) in sockets.iter() {
+                let _ = socket.shutdown(Shutdown::Both);
+            }
+        }
+        if let Some(handle) = self.accept.take() {
+            let _ = handle.join();
+        }
+    }
+
     /// The loopback port Chrome must use: `socks5://127.0.0.1:<port>`.
     pub fn port(&self) -> u16 {
         self.port
@@ -331,7 +385,12 @@ struct Shared {
     clients: Arc<AtomicUsize>,
     client_limit: Arc<AtomicUsize>,
     owner: Arc<AtomicU32>,
-    listen_port: u16,
+    /// The relay's own address, as the connections to it name it.
+    listen: SocketAddr,
+    /// The owner-tree view and the post-miss checks; see `MAX_CHECKS`.
+    checks: Arc<peer::Peers>,
+    /// Connections waiting for their check; see `MAX_PENDING_CHECKS`.
+    pending: Arc<peer::Gate>,
     peer_checks: Arc<AtomicU64>,
     peer_refused: Arc<AtomicU64>,
     peer_max_nanos: Arc<AtomicU64>,
@@ -420,8 +479,8 @@ impl Shared {
     /// a process that is still there, including after FIN, are a refusal.
     fn admit(&self, client: &TcpStream) -> Admission {
         let owner = self.owner.load(Ordering::SeqCst);
-        let peer_port = match client.peer_addr() {
-            Ok(addr) => addr.port(),
+        let client_addr = match client.peer_addr() {
+            Ok(addr) => addr,
             Err(_) => {
                 return if quiet_cancel(client) {
                     Admission::QuietClose
@@ -432,7 +491,7 @@ impl Shared {
             }
         };
         let started = std::time::Instant::now();
-        let verdict = peer::admit(peer_port, self.listen_port, owner);
+        let verdict = peer::admit(client_addr, self.listen, owner, &self.checks);
         let nanos = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
         self.peer_checks.fetch_add(1, Ordering::Relaxed);
         let mut current = self.peer_max_nanos.load(Ordering::Relaxed);
@@ -528,17 +587,28 @@ fn accept_loop(listener: TcpListener, stop: Arc<AtomicBool>, shared: Shared) {
         match listener.accept() {
             Ok((client, _)) => {
                 let _ = client.set_nonblocking(false);
-                if !shared.try_acquire() {
+                // The connection waits for its check on its own slot, not a tunnel slot.
+                let Some(pending) = peer::Gate::try_acquire(&shared.pending) else {
                     shared.fail("too many connections".to_string());
                     let _ = client.shutdown(Shutdown::Both);
                     continue;
-                }
+                };
                 let shared = shared.clone();
                 thread::spawn(move || {
-                    let _slot = ClientSlot(shared.clone());
                     let _tracked_client = shared.track(&client);
-                    match shared.admit(&client) {
-                        Admission::Admitted => handle_client(client, shared),
+                    let verdict = shared.admit(&client);
+                    // The check is over: its waiting slot is free before any tunnel starts.
+                    drop(pending);
+                    match verdict {
+                        Admission::Admitted => {
+                            if !shared.try_acquire() {
+                                shared.fail("too many connections".to_string());
+                                let _ = client.shutdown(Shutdown::Both);
+                                return;
+                            }
+                            let _slot = ClientSlot(shared.clone());
+                            handle_client(client, shared);
+                        }
                         Admission::QuietClose => {
                             let _ = client.shutdown(Shutdown::Both);
                         }
@@ -1898,7 +1968,12 @@ mod wire_tests {
 
     /// Sends one CONNECT. `0xfe` means the relay closed the socket before a reply.
     fn chrome_request(relay_port: u16, atyp: u8, addr: &[u8], port: u16) -> io::Result<(u8, TcpStream)> {
-        let mut c = TcpStream::connect((Ipv4Addr::LOCALHOST, relay_port))?;
+        let c = TcpStream::connect((Ipv4Addr::LOCALHOST, relay_port))?;
+        chrome_request_on(c, atyp, addr, port)
+    }
+
+    /// The SOCKS5 exchange on a connection that is already open.
+    fn chrome_request_on(mut c: TcpStream, atyp: u8, addr: &[u8], port: u16) -> io::Result<(u8, TcpStream)> {
         c.set_read_timeout(Some(Duration::from_secs(10)))?;
         if write_all_retry(&mut c, &[5, 1, 0]).is_err() {
             return Ok((0xfe, c));
@@ -2137,7 +2212,19 @@ mod wire_tests {
             let relay = start(&format!("socks5://{USER}:{PASSWORD}@127.0.0.1:{up}"), None);
             relay.port()
         };
-        assert!(TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_err());
+        // The relay closed its listener when it was dropped, so the port can be bound again at
+        // once. A connect is not a reliable test: another test may take the port, and a free
+        // ephemeral port can connect to itself.
+        // Another test can take the port in the instant after the drop: retry for a while. A
+        // listener that the drop did not close keeps the port for the whole window.
+        let started = std::time::Instant::now();
+        while TcpListener::bind((Ipv4Addr::LOCALHOST, port)).is_err() {
+            assert!(
+                started.elapsed() < Duration::from_millis(500),
+                "the relay still holds its port after it was dropped"
+            );
+            thread::sleep(Duration::from_millis(2));
+        }
     }
 
     #[test]
@@ -2234,14 +2321,19 @@ mod wire_tests {
         let newest = format!("127.0.0.1:{}", MAX_FAILURES + 8);
         assert!(failures.iter().any(|line| line.ends_with(&newest)), "{failures:?}");
 
+        // The cap counts admitted tunnels. The held connections belong to this process, so they
+        // are admitted and keep their slots while the next one arrives.
         relay.set_connection_limit(2);
+        relay.set_owner_pid(std::process::id());
         let mut held = Vec::new();
         for _ in 0..2 {
             held.push(TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())).unwrap());
         }
-        thread::sleep(Duration::from_millis(80));
+        thread::sleep(Duration::from_millis(200));
         let mut extra = TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())).unwrap();
-        extra.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
+        // The relay closes the connection past the cap on its own schedule; under load that can
+        // take longer than a short read, so the read waits for the close itself.
+        extra.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut buf = [0u8; 1];
         let read = extra.read(&mut buf);
         let closed = match read {
@@ -2282,6 +2374,148 @@ mod wire_tests {
         for line in &failures {
             assert!(!line.contains(PASSWORD) && !line.contains(USER) && !line.contains("wrong-"), "{line}");
         }
+    }
+
+    /// Runs only when spawned by `a_flood_of_strangers_does_not_refuse_the_browser`: a
+    /// browser child that holds one connection to the relay, as Chrome does.
+    #[test]
+    fn relay_browser_probe() {
+        let Ok(target) = std::env::var("SCRAPELENS_RELAY_BROWSER") else {
+            return;
+        };
+        // `relay port,echo port`: the destination is a live echo server, so a tunnel succeeds.
+        let (port, echo) = target.split_once(',').expect("relay and echo ports");
+        let port: u16 = port.parse().expect("relay port");
+        let echo: u16 = echo.parse().expect("echo port");
+        // The parent publishes this pid right after spawning the child: wait for it.
+        thread::sleep(Duration::from_millis(400));
+        // The flood is already open when this line is read. The parent measures admission
+        // from here, so a slow process start under load is not counted as relay latency.
+        println!("READY");
+        let socket = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("probe connects");
+        println!("CONNECTED");
+        let (code, _socket) = chrome_request_on(socket, 1, &[127, 0, 0, 1], echo).unwrap();
+        println!("CODE {code}");
+        thread::sleep(Duration::from_secs(25));
+    }
+
+    /// The flood: 800 connections the browser does not own, all open at once, while the
+    /// browser makes its one connection. The strangers are checked against a shared tree view
+    /// and never hold a tunnel slot. The browser's connection must still be admitted, and
+    /// admitted promptly once it is open: the relay's share is measured from CONNECTED.
+    #[test]
+    fn a_flood_of_strangers_does_not_refuse_the_browser() {
+        struct Kill(std::process::Child);
+        impl Drop for Kill {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let (up, seen) = socks_upstream(USER, PASSWORD);
+        let link = ProxyLink::parse(&format!("socks5://{USER}:{PASSWORD}@127.0.0.1:{up}")).unwrap();
+        let relay = Relay::start(&link, None).unwrap();
+        let mut browser = Kill(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "relay::wire_tests::relay_browser_probe", "--nocapture", "--test-threads", "1"])
+                .env("SCRAPELENS_RELAY_BROWSER", format!("{},{}", relay.port(), echo_server()))
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
+        relay.set_owner_pid(browser.0.id());
+        let stdout = browser.0.stdout.take().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (connected_tx, connected_rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            use std::io::BufRead;
+            for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
+                if line.contains("READY") {
+                    let _ = ready_tx.send(std::time::Instant::now());
+                }
+                if line.contains("CONNECTED") {
+                    let _ = connected_tx.send(std::time::Instant::now());
+                }
+                // The harness writes its own "name ... " before the probe's line.
+                if let Some(at) = line.find("CODE ") {
+                    let code = line[at + 5..].split_whitespace().next().and_then(|c| c.parse::<u8>().ok());
+                    let _ = tx.send((code, std::time::Instant::now()));
+                    return;
+                }
+            }
+        });
+        let started = std::time::Instant::now();
+        let mut strangers = Vec::new();
+        for _ in 0..800 {
+            if let Ok(stream) = TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())) {
+                strangers.push(stream);
+            }
+        }
+        let ready_at = ready_rx
+            .recv_timeout(Duration::from_secs(20))
+            .expect("the browser child never became ready");
+        let connected_at = connected_rx
+            .recv_timeout(Duration::from_secs(20))
+            .expect("the browser child never connected");
+        let code = rx
+            .recv_timeout(Duration::from_secs(20))
+            .expect("the browser's connection was not answered");
+        let (code, code_at) = code;
+        let code = code.expect("the browser's reply carried no code");
+        // The relay's share is from an open connection to the reply. The connect is reported
+        // apart: a full listen backlog drops a SYN, and that is not an admission delay.
+        let admitted_after = code_at.duration_since(connected_at);
+        let connect_after = connected_at.duration_since(ready_at);
+        let total = started.elapsed();
+        assert_eq!(
+            code, 0,
+            "the browser was refused during the flood after {admitted_after:?}: {:?}",
+            relay.failures()
+        );
+        assert!(
+            admitted_after < Duration::from_secs(5),
+            "{admitted_after:?} from connect, {connect_after:?} from ready, {total:?} total"
+        );
+        let logins = seen.lock().unwrap().iter().filter(|line| *line == "auth-ok").count();
+        assert_eq!(logins, 1, "only the browser reached the upstream: {:?}", seen.lock().unwrap());
+        // A refusal lands after the browser's own admission, so wait for all of them
+        // before counting.
+        let waited = std::time::Instant::now();
+        // Each stranger is counted when its own check ends. A check ends at the window or when a
+        // scheduler delay lets it run past it, so wait for the count, not for a fixed time.
+        while relay.peer_check().refused < strangers.len() as u64 && waited.elapsed() < Duration::from_secs(20) {
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(relay.peer_check().refused, strangers.len() as u64, "every stranger was checked and refused");
+        drop(strangers);
+    }
+
+    /// The browser exits while a request is in flight: the relay closes after the tunnel's
+    /// window, and the bytes already sent still come back. The counts stay readable.
+    #[test]
+    fn closing_after_the_browser_exits_lets_an_in_flight_tunnel_finish() {
+        let echo = echo_server();
+        let (up, _seen) = socks_upstream(USER, PASSWORD);
+        let link = ProxyLink::parse(&format!("socks5://{USER}:{PASSWORD}@127.0.0.1:{up}")).unwrap();
+        let mut relay = Relay::start(&link, None).expect("relay starts");
+        relay.set_owner_pid(std::process::id());
+        let (code, mut tunnel) = chrome_connect(relay.port(), echo);
+        assert_eq!(code, 0);
+        let reader = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(200));
+            tunnel.write_all(b"late").unwrap();
+            let mut back = [0u8; 4];
+            tunnel.read_exact(&mut back).map(|_| back)
+        });
+        let started = std::time::Instant::now();
+        relay.close_after_browser(Duration::from_secs(3));
+        let took = started.elapsed();
+        assert_eq!(&reader.join().unwrap().expect("the in-flight bytes came back"), b"late");
+        // The window is 3 s; the slack covers scheduling under load. The bytes came back above.
+        assert!(took < Duration::from_secs(5), "the window ended late: {took:?}");
+        assert!(relay.peer_check().checks >= 1, "the counts stay readable");
+        assert!(TcpListener::bind((Ipv4Addr::LOCALHOST, relay.port())).is_ok(), "the port is released");
     }
 
     /// Runs only when spawned by `a_stranger_is_refused_and_a_child_of_the_owner_is_admitted`.
@@ -2343,8 +2577,9 @@ mod wire_tests {
             .unwrap();
         assert!(
             child.status.success(),
-            "status {:?} stderr {}",
+            "status {:?} stdout {} stderr {}",
             child.status,
+            String::from_utf8_lossy(&child.stdout),
             String::from_utf8_lossy(&child.stderr)
         );
         let log = seen.lock().unwrap().clone();
@@ -2361,9 +2596,9 @@ mod wire_tests {
         );
         assert!(stats.checks >= 3, "{stats:?}");
         assert_eq!(stats.refused, 2, "only the two stranger attempts are refused");
-        // A miss may use the confirmation budget. A hit does not, and this cap
-        // is only there so a stuck check cannot pass.
-        assert!(stats.max_nanos < 1_500_000_000, "peer check max {} ns", stats.max_nanos);
+        // A miss runs to the check window; the slack covers scheduling under load.
+        let bound = super::peer::CHECK_WINDOW + Duration::from_secs(2);
+        assert!(stats.max_nanos < bound.as_nanos() as u64, "peer check max {} ns", stats.max_nanos);
     }
 
     /// The reviewer's case: a stranger writes the SOCKS request, half-closes, and keeps
@@ -2388,7 +2623,7 @@ mod wire_tests {
         let before = seen.lock().unwrap().len();
 
         let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())).unwrap();
-        client.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        client.set_read_timeout(Some(super::peer::CHECK_WINDOW + Duration::from_secs(3))).unwrap();
         let mut request = vec![5, 1, 0, 5, 1, 0, 1, 127, 0, 0, 1];
         request.extend_from_slice(&9u16.to_be_bytes());
         client.write_all(&request).unwrap();
@@ -2414,7 +2649,7 @@ mod wire_tests {
         let refused_after_attack = relay.peer_check().refused;
 
         let mut open = TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())).unwrap();
-        open.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        open.set_read_timeout(Some(super::peer::CHECK_WINDOW + Duration::from_secs(3))).unwrap();
         open.write_all(&request).unwrap();
         let mut open_response = [0u8; 12];
         let open_read = open.read(&mut open_response);
@@ -2425,6 +2660,12 @@ mod wire_tests {
             log.iter().all(|line| line != "auth-ok" && !line.starts_with("LINE ")),
             "open stranger reached the upstream: {log:?}"
         );
+        // The open stranger is counted when its check ends. A check ends at the window, which is
+        // the read timeout's bound too, so poll for the count rather than read it once.
+        let until = std::time::Instant::now() + Duration::from_secs(10);
+        while relay.peer_check().refused <= refused_after_attack && std::time::Instant::now() < until {
+            thread::sleep(Duration::from_millis(20));
+        }
         assert!(relay.peer_check().refused > refused_after_attack);
 
         let failure_count = relay.failures().len();
@@ -2497,7 +2738,12 @@ mod wire_tests {
             }
         }
         let sleeper = StopSleep(Some(sleeper));
-        let verdict = super::peer::admit(server.peer_addr().unwrap().port(), port, sleeper.0.as_ref().unwrap().id());
+        let verdict = super::peer::admit(
+            server.peer_addr().unwrap(),
+            listener.local_addr().unwrap(),
+            sleeper.0.as_ref().unwrap().id(),
+            &super::peer::Peers::new(64),
+        );
         assert_eq!(verdict, Err(super::peer::ALREADY_CLOSED), "{verdict:?}");
     }
 }
