@@ -110,6 +110,17 @@ fn h2_settings_window_and_client_hello_are_recorded() {
     assert_eq!(hello.version, "TLS 1.3");
     assert_eq!(hello.alpn, vec!["h2".to_string(), "http/1.1".to_string()]);
     assert!(hello.sni.is_none(), "the capture is to 127.0.0.1");
+    let server = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../experiments/results/h2-page/server-h2.jsonl");
+    let line = std::fs::read_to_string(server)
+        .unwrap()
+        .lines()
+        .next()
+        .unwrap()
+        .to_string();
+    let server_record: serde_json::Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(server_record["tls"]["tls_version"], "TLSv1.3");
+    assert_eq!(server_record["tls"]["alpn"], "h2");
     assert_eq!(
         hello.ja4, "t13i1516h2_8daaf6152771_cb7bf5808d99",
         "JA4 with GREASE removed"
