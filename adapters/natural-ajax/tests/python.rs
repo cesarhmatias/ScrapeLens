@@ -408,27 +408,96 @@ fn python_decoder_is_as_strict_as_rust_on_random_inputs() {
     assert!(ok > 200 && err > 200);
 }
 
+/// Multiple of the Rust reference: the same input with its first byte replaced by `!`, which is
+/// not an operation, so the decoder fails right after the byte pass that every input of this
+/// size pays. Measured in debug (see the commit message).
+const PASS_FACTOR: f64 = 2.0;
+
+/// Multiple of the Python reference, timed in the same Python process: the work each limit lets
+/// through (32 scopes, 10,000 keys).
+const PY_FACTOR: f64 = 3.0;
+
+/// Smallest thread CPU time over `runs` executions of `f`.
+fn min_cpu(runs: usize, mut f: impl FnMut()) -> std::time::Duration {
+    (0..runs)
+        .map(|_| {
+            let start = thread_cpu();
+            f();
+            thread_cpu() - start
+        })
+        .min()
+        .expect("at least one run")
+}
+
+fn assert_cost_within(what: &str, cost: std::time::Duration, bound: std::time::Duration) {
+    eprintln!("{what}: CPU time {cost:?}, bound {bound:?}");
+    assert!(
+        cost <= bound,
+        "{what}: CPU time {cost:?} exceeds the bound {bound:?}"
+    );
+}
+
 #[test]
 fn deep_scopes_and_big_dictionaries_are_refused_fast_in_rust_and_python() {
     use scrapelens_natural_ajax::grammar;
     let deep = "b01a".repeat(40_000) + &"p0100001ab".repeat(40_000);
+    // Valid dictionary entries (`s`, key length 6, name length 0) with distinct keys: the 10,001st
+    // is refused.
     let mut dict = String::new();
     for i in 0..100_000 {
-        dict.push_str(&format!("s8{:02}{:08}{:02}", 2, i, 10));
-        dict.push_str("ab");
+        dict.push_str(&format!("s600{:06}", i));
     }
-    let start = thread_cpu();
-    assert!(grammar::parse(&deep).is_err());
-    assert!(grammar::parse(&dict).is_err());
-    assert!(NaturalAjax.decode(&deep).is_err());
-    let spent = thread_cpu() - start;
-    assert!(spent.as_secs_f64() < 1.0, "CPU time {spent:?}");
-    // Depth and dictionary within the limit keep working.
+    let mut dict_limit = String::new();
+    for i in 0..10_000 {
+        dict_limit.push_str(&format!("s600{:06}", i));
+    }
+    let depth_limit = "b01a".repeat(33);
     let ok_depth = "b01a".repeat(32) + "p0100001ab" + &"c".repeat(32) + "x02ok";
-    assert!(grammar::parse(&ok_depth).is_ok());
-    assert!(grammar::parse(&("b01a".repeat(33))).is_err());
 
-    // Python: same verdict, fast and with low memory.
+    // Rust reference (see PASS_FACTOR).
+    let deep_pass = format!("!{}", &deep[1..]);
+    let dict_pass = format!("!{}", &dict[1..]);
+    // Each measurement is a block of five runs: a single run is too short to average out load.
+    let deep_ref = min_cpu(3, || {
+        for _ in 0..5 {
+            assert!(grammar::parse(&deep_pass).is_err());
+        }
+    });
+    let dict_ref = min_cpu(3, || {
+        for _ in 0..5 {
+            assert!(grammar::parse(&dict_pass).is_err());
+        }
+    });
+    let parse_deep = min_cpu(3, || {
+        for _ in 0..5 {
+            let _ = grammar::parse(&deep);
+        }
+    });
+    let decode_deep = min_cpu(3, || {
+        for _ in 0..5 {
+            let _ = NaturalAjax.decode(&deep);
+        }
+    });
+    let parse_dict = min_cpu(3, || {
+        for _ in 0..5 {
+            let _ = grammar::parse(&dict);
+        }
+    });
+    assert_cost_within("parse of the deep scopes", parse_deep, deep_ref.mul_f64(PASS_FACTOR));
+    assert_cost_within("decode of the deep scopes", decode_deep, deep_ref.mul_f64(PASS_FACTOR));
+    assert_cost_within("parse of the big dictionary", parse_dict, dict_ref.mul_f64(PASS_FACTOR));
+    // The refusals are the limits themselves, not some other error.
+    let deep_err = grammar::parse(&deep).unwrap_err().to_string();
+    assert!(deep_err.contains("nested too deeply"), "{deep_err}");
+    let dict_err = grammar::parse(&dict).unwrap_err().to_string();
+    assert!(dict_err.contains("too many dictionary keys"), "{dict_err}");
+    assert!(NaturalAjax.decode(&deep).is_err());
+    // Depth and dictionary within the limit keep working.
+    assert!(grammar::parse(&ok_depth).is_ok());
+    assert!(grammar::parse(&depth_limit).is_err());
+    assert!(grammar::parse(&dict_limit).is_ok());
+
+    // Python: same verdicts, timed in this process against the work each limit lets through.
     let python = {
         use scrapelens_natural_ajax::PYTHON_DECODER;
         let dir = tempfile::tempdir().unwrap();
@@ -442,23 +511,39 @@ import json, sys, time, resource
 def fail(message):
     raise SystemExit('priming: ' + message)
 {PYTHON_ENCODER}
-texts = json.load(open(sys.argv[1], encoding='utf-8'))
-t = time.process_time()
-res = []
-for text in texts:
+def run(text):
     try:
-        {PYTHON_DECODER}(text); res.append(True)
-    except SystemExit:
-        res.append(False)
+        {PYTHON_DECODER}(text)
+        return True
+    except SystemExit as error:
+        return str(error)
+def timed(text, reps):
+    best = None
+    for _ in range(3):
+        start = time.process_time()
+        for _ in range(reps):
+            run(text)
+        spent = time.process_time() - start
+        best = spent if best is None or spent < best else best
+    return best
+texts = json.load(open(sys.argv[1], encoding='utf-8'))
+deep, dictionary, ok_depth, dict_limit, depth_limit = texts
+res = [run(text) for text in (deep, dictionary, ok_depth)]
+# Reference: the work the limits allow (32 scopes, 10,000 keys), with blocks long enough to
+# average out host load.
+times = dict(
+    deep=[timed(deep, 1000), timed(depth_limit, 1000)],
+    dict=[timed(dictionary, 5), timed(dict_limit, 5)],
+)
 rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-print(json.dumps({{'ok': res, 'secs': time.process_time() - t, 'rss_mb': rss / (1024 * 1024 if sys.platform == 'darwin' else 1024)}}))
+print(json.dumps(dict(ok=res, times=times, rss_mb=rss / (1024 * 1024 if sys.platform == 'darwin' else 1024))))
 "#
             ),
         )
         .unwrap();
         std::fs::write(
             &input,
-            serde_json::to_string(&[deep, dict, ok_depth]).unwrap(),
+            serde_json::to_string(&[&deep, &dict, &ok_depth, &dict_limit, &depth_limit]).unwrap(),
         )
         .unwrap();
         let out = Command::new("python3")
@@ -474,8 +559,19 @@ print(json.dumps({{'ok': res, 'secs': time.process_time() - t, 'rss_mb': rss / (
         );
         serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()
     };
-    assert_eq!(python["ok"], serde_json::json!([false, false, true]));
-    assert!(python["secs"].as_f64().unwrap() < 1.0, "{python}");
+    let verdicts = python["ok"].as_array().unwrap();
+    assert!(verdicts[0].as_str().unwrap().contains("nested too deeply"), "{python}");
+    assert!(verdicts[1].as_str().unwrap().contains("too many dictionary keys"), "{python}");
+    assert_eq!(verdicts[2], serde_json::json!(true), "{python}");
+    for (name, pair) in [("deep", "deep"), ("dict", "dict")] {
+        let subject = python["times"][pair][0].as_f64().unwrap();
+        let reference = python["times"][pair][1].as_f64().unwrap();
+        eprintln!("python {name}: {subject:.4}s, reference {reference:.4}s");
+        assert!(
+            subject <= reference * PY_FACTOR,
+            "python {name}: {subject}s exceeds {PY_FACTOR} times the reference {reference}s"
+        );
+    }
     assert!(python["rss_mb"].as_f64().unwrap() < 100.0, "{python}");
 }
 
