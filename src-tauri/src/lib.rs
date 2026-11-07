@@ -72,6 +72,17 @@ pub fn cleanup_orphans_on_start(state_root: &Path) {
     }
 }
 
+/// `scrapelens mcp …`: the MCP server, before Tauri starts (T20). Returns the exit code, or
+/// `None` when the arguments are for the App. The hardening is the App's, and the server is the
+/// one `scrapelens-mcp` runs; stdout carries only the protocol.
+pub fn mcp_subcommand(args: &[String]) -> Option<i32> {
+    if args.get(1).map(String::as_str) != Some("mcp") {
+        return None;
+    }
+    hardening::harden_process();
+    Some(scrapelens_mcp::entry::run(args[2..].to_vec()))
+}
+
 pub fn run() {
     // T15: no core dumps, and no ptrace or /proc access by other processes, from the first instant.
     for problem in hardening::harden_process() {
@@ -237,5 +248,28 @@ mod tests {
 
         let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_dir_all(&profile);
+    }
+}
+
+#[cfg(test)]
+mod mcp_package_tests {
+    use super::mcp_subcommand;
+
+    #[test]
+    fn the_mcp_server_has_the_app_version() {
+        // The App, its Cargo package and the MCP server are one version; the packages ship it.
+        assert_eq!(scrapelens_mcp::entry::VERSION, env!("CARGO_PKG_VERSION"));
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).expect("tauri.conf.json");
+        assert_eq!(conf["version"].as_str(), Some(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn only_the_mcp_word_starts_the_server() {
+        let app = vec!["scrapelens".to_string()];
+        assert_eq!(mcp_subcommand(&app), None);
+        // Without --sessions-dir the server refuses to start: exit 2, nothing on stdout.
+        let mcp = vec!["scrapelens".to_string(), "mcp".to_string()];
+        assert_eq!(mcp_subcommand(&mcp), Some(2));
     }
 }
