@@ -99,6 +99,9 @@ owned by others must be agreed on the project channel.
 - Known limitations that must not regress: `--remote-allow-origins=*` on the
   CDP (loopback/ephemeral port/capture window), CDP bodies `unavailable`,
   capture of one target per session, no validated Intel build.
+- **Published history is not rewritten.** Do not force-push to `main`. The only
+  exception is removing a real secret, and only with the maintainer's approval.
+  Old paths stay in the history.
 
 ## Reporting issues
 
