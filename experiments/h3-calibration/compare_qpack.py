@@ -49,7 +49,7 @@ def field_order(path: pathlib.Path) -> list[str]:
     for key, text in walk(data):
         lower = key.lower()
         if "http3" in lower and "header" in lower:
-            candidates.extend(part for part in re.split(r"[\\n,]+", text) if ":" in part)
+            candidates.extend(part for part in re.split(r"(?:\\n|\n|,)+", text) if ":" in part)
     if not candidates:
         raise SystemExit(
             "LIMIT: tshark did not expose the decoded HTTP/3 header list "
@@ -57,7 +57,10 @@ def field_order(path: pathlib.Path) -> list[str]:
         )
     names = []
     for line in candidates:
-        name, _, _ = line.partition(":")
+        if ": " in line:
+            name = line.rsplit(": ", 1)[0]
+        else:
+            name = line.partition(":")[0]
         name = name.strip().strip('"')
         if name:
             names.append(name)
