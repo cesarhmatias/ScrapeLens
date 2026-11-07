@@ -215,7 +215,6 @@ mod tests {
     fn keep_never_writes_outside_when_the_parent_is_swapped_for_a_link() {
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
-        use std::time::Duration;
 
         let base = tmp("swap");
         let root = tmp_root(&base).unwrap();

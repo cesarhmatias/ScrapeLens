@@ -832,7 +832,6 @@ mod tests {
     fn text_export_never_lands_outside_when_the_folder_is_swapped_for_a_link() {
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
-        use std::time::Duration;
 
         let base = temp_dir("text-swap");
         let outside = base.join("outside");
