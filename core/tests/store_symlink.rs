@@ -157,3 +157,89 @@ fn symlinked_attachments_dir_and_files_are_refused() {
     assert!(write_session_dir(&b, &dir2).is_err());
     intact(&target);
 }
+
+#[test]
+fn parallel_creation_of_the_same_chain_is_idempotent() {
+    use std::sync::{Arc, Barrier};
+    let root = tempfile::tempdir().unwrap();
+    let destination = root.path().join("a").join("b").join("session");
+    let barrier = Arc::new(Barrier::new(8));
+    let mut threads = Vec::new();
+    for _ in 0..8 {
+        let destination = destination.clone();
+        let barrier = barrier.clone();
+        threads.push(std::thread::spawn(move || {
+            barrier.wait();
+            let mut failures = Vec::new();
+            for _ in 0..300 {
+                if let Err(error) = scrapelens_core::store::ensure_private_dir(&destination) {
+                    failures.push(error.to_string());
+                }
+            }
+            failures
+        }));
+    }
+    let failures: Vec<String> = threads
+        .into_iter()
+        .flat_map(|thread| thread.join().unwrap())
+        .collect();
+    assert!(
+        failures.is_empty(),
+        "concurrent creation failed: {failures:?}"
+    );
+    let meta = fs::symlink_metadata(&destination).unwrap();
+    assert!(meta.is_dir() && !meta.file_type().is_symlink());
+    assert_eq!(meta.permissions().mode() & 0o777, 0o700);
+}
+
+#[test]
+fn racing_symlink_and_creation_never_escapes_or_masks_the_link() {
+    use std::sync::{Arc, Barrier};
+    for _ in 0..100 {
+        let root = tempfile::tempdir().unwrap();
+        let allowed = root.path().join("allowed");
+        let outside = root.path().join("outside");
+        fs::create_dir(&allowed).unwrap();
+        fs::create_dir(&outside).unwrap();
+        let destination = allowed.join("session");
+        let barrier = Arc::new(Barrier::new(2));
+
+        let creator = {
+            let destination = destination.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                scrapelens_core::store::ensure_private_dir(&destination)
+            })
+        };
+        let planter = {
+            let destination = destination.clone();
+            let outside = outside.clone();
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                let _ = symlink(&outside, &destination);
+            })
+        };
+
+        let created = creator.join().unwrap();
+        planter.join().unwrap();
+        assert_eq!(
+            fs::read_dir(&outside).unwrap().count(),
+            0,
+            "nothing may be written outside"
+        );
+        let meta = fs::symlink_metadata(&destination).unwrap();
+        if created.is_ok() {
+            assert!(
+                meta.is_dir() && !meta.file_type().is_symlink(),
+                "a successful creation must be a real directory"
+            );
+        } else {
+            assert!(
+                meta.file_type().is_symlink(),
+                "a refusal must be caused by the planted symlink"
+            );
+        }
+    }
+}
