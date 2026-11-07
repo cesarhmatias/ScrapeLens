@@ -402,7 +402,7 @@ impl Manager {
                     .unwrap_or_else(|| "(none)".to_string())
             ),
             if expose_cdp {
-                "YES — WARNING: the CDP socket has no authentication; any local process of this user can control the whole Chrome (all tabs, cookies, open sessions). It is mode 0600, not a TCP port, and refuses cookie dumps, download changes, and file:// and chrome:// URLs"
+                "YES — WARNING: the CDP socket has no authentication; any local process of this user can control the whole Chrome (all tabs, cookies, open sessions). It is mode 0600, not a TCP port. The agent may call Runtime.evaluate and read page data and cookies that are not HttpOnly, unmasked. file:// and chrome:// URLs are refused. Network, Storage, Fetch, and other Browser methods are refused."
             } else {
                 "no"
             },

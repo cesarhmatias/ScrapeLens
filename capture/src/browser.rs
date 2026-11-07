@@ -46,10 +46,21 @@ pub(crate) enum Control {
         timeout: Duration,
         reply: Sender<Result<NavigateResult, NavigateError>>,
     },
-    /// An external client command that already passed the socket allowlist.
+    /// An external client command that already passed the socket method allowlist.
+    /// The session check runs here, where the fan-out state lives.
     ForwardCdp {
+        client: u64,
         message: Value,
         reply: Sender<String>,
+    },
+    /// The socket accepted a connection. Events for its sessions go to `events`.
+    ExposeSubscribe {
+        client: u64,
+        events: Sender<String>,
+    },
+    /// The socket connection closed.
+    ExposeUnsubscribe {
+        client: u64,
     },
 }
 
@@ -343,17 +354,28 @@ impl BrowserCapture {
             warnings: Vec::new(),
         };
         let gate = if config.expose_cdp {
-            let (tx, rx) = channel::<super::cdp_expose::UpstreamCmd>();
+            let (tx, rx) = channel::<super::cdp_expose::Upstream>();
             let forward = control_tx.clone();
             thread::spawn(move || {
-                while let Ok(cmd) = rx.recv() {
-                    if forward
-                        .send(Control::ForwardCdp {
-                            message: cmd.message,
-                            reply: cmd.reply,
-                        })
-                        .is_err()
-                    {
+                while let Ok(msg) = rx.recv() {
+                    let control = match msg {
+                        super::cdp_expose::Upstream::Subscribe { client, events } => {
+                            Control::ExposeSubscribe { client, events }
+                        }
+                        super::cdp_expose::Upstream::Unsubscribe { client } => {
+                            Control::ExposeUnsubscribe { client }
+                        }
+                        super::cdp_expose::Upstream::Command {
+                            client,
+                            message,
+                            reply,
+                        } => Control::ForwardCdp {
+                            client,
+                            message,
+                            reply,
+                        },
+                    };
+                    if forward.send(control).is_err() {
                         break;
                     }
                 }
@@ -475,7 +497,27 @@ impl Cdp {
                 let result = self.navigate_page(socket, &url, wait_load, timeout);
                 let _ = reply.send(result);
             }
-            Control::ForwardCdp { mut message, reply } => {
+            Control::ExposeSubscribe { client, events } => {
+                self.fanout.subscribe(client, events);
+            }
+            Control::ExposeUnsubscribe { client } => {
+                self.fanout.disconnect(client);
+            }
+            Control::ForwardCdp {
+                client,
+                mut message,
+                reply,
+            } => {
+                if let Some(reason) = super::cdp_expose::session_denied(&self.fanout, client, &message)
+                {
+                    let id = message.get("id").cloned().unwrap_or(Value::Null);
+                    let body = json!({
+                        "id": id,
+                        "error": {"code": -32601, "message": reason}
+                    });
+                    let _ = reply.send(body.to_string());
+                    return;
+                }
                 let Some(obj) = message.as_object_mut() else {
                     let _ = reply.send(
                         "{\"error\":{\"code\":-32600,\"message\":\"the CDP message is not an object\"}}"
@@ -484,12 +526,31 @@ impl Cdp {
                     return;
                 };
                 let client_id = obj.get("id").cloned().unwrap_or(Value::Null);
+                let method = obj
+                    .get("method")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
                 let id = self.next_id;
                 self.next_id = self.next_id.saturating_add(1);
+                if method == "Target.attachToTarget" {
+                    if let Some(target) = obj
+                        .get("params")
+                        .and_then(|params| params.get("targetId"))
+                        .and_then(Value::as_str)
+                    {
+                        self.external_attaches.insert(id, target.to_string());
+                    }
+                }
                 obj.insert("id".to_string(), json!(id));
                 self.external.insert(
                     id,
-                    super::cdp_expose::ExternalPending { client_id, reply },
+                    super::cdp_expose::ExternalPending {
+                        client_id,
+                        reply,
+                        client,
+                        method,
+                    },
                 );
                 if socket.send_text(message.to_string()).is_err() {
                     if let Some(pending) = self.external.remove(&id) {
@@ -767,8 +828,11 @@ mod tests {
     fn live_config(allowed: Vec<String>, name: &str, expose_cdp: bool) -> BrowserCaptureConfig {
         BrowserCaptureConfig {
             chrome: chrome_or_skip(),
-            session_dir: std::env::temp_dir().join(format!(
-                "scrapelens-bc-live-{name}-{}-{}",
+            // `/tmp` stays under the unix-socket path limit (SUN_LEN). The
+            // long `temp_dir()` on macOS does not, once `cdp.sock` is appended.
+            session_dir: PathBuf::from(format!(
+                "/tmp/slb-{}-{}-{}",
+                name,
                 std::process::id(),
                 super::super::unix_millis()
             )),
@@ -888,11 +952,100 @@ mod tests {
         assert!(session_json.contains("capture.allowlist_violation"));
     }
 
-    /// Second CDP client (the agent) on the same Chrome, with auto-attach and
-    /// `waitForDebuggerOnStart`. Measures whether it coexists with our client
-    /// (`docs/16b-mcp-browser.md` §3.5). `cooperative`: resumes the paused
-    /// targets; otherwise it never calls `runIfWaitingForDebugger`.
-    fn second_cdp_client_scenario(cooperative: bool, name: &str) -> (bool, Vec<String>, String) {
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixStream;
+
+    /// NUL-framed client for `cdp.sock`. Command replies and events share the stream.
+    struct PipeClient {
+        stream: UnixStream,
+        buf: Vec<u8>,
+        frames: Vec<Value>,
+    }
+
+    impl PipeClient {
+        fn connect(path: &str) -> Self {
+            let stream = UnixStream::connect(path).expect("cdp socket");
+            stream
+                .set_read_timeout(Some(Duration::from_millis(200)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            Self {
+                stream,
+                buf: Vec::new(),
+                frames: Vec::new(),
+            }
+        }
+
+        fn send(&mut self, id: u64, method: &str, params: Value, session: Option<&str>) {
+            let mut msg = json!({"id": id, "method": method, "params": params});
+            if let Some(session) = session {
+                msg["sessionId"] = json!(session);
+            }
+            self.stream
+                .write_all(msg.to_string().as_bytes())
+                .expect("write");
+            self.stream.write_all(&[0]).expect("write nul");
+        }
+
+        fn pump(&mut self, wait: Duration) {
+            let deadline = Instant::now() + wait;
+            loop {
+                let mut byte = [0u8; 1];
+                match self.stream.read(&mut byte) {
+                    Ok(0) => break,
+                    Ok(_) if byte[0] == 0 => {
+                        let frame = std::mem::take(&mut self.buf);
+                        if let Ok(value) = serde_json::from_slice::<Value>(&frame) {
+                            self.frames.push(value);
+                        }
+                    }
+                    Ok(_) => self.buf.push(byte[0]),
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::WouldBlock
+                            || error.kind() == std::io::ErrorKind::TimedOut =>
+                    {
+                        if Instant::now() >= deadline {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+
+        fn call(&mut self, id: u64, method: &str, params: Value, session: Option<&str>) -> Value {
+            self.send(id, method, params, session);
+            let deadline = Instant::now() + Duration::from_secs(15);
+            loop {
+                if let Some(pos) = self
+                    .frames
+                    .iter()
+                    .position(|value| value.get("id").and_then(Value::as_u64) == Some(id))
+                {
+                    return self.frames.remove(pos);
+                }
+                if Instant::now() >= deadline {
+                    panic!("no response to {method}; frames={}", self.frames.len());
+                }
+                self.pump(Duration::from_millis(200));
+            }
+        }
+
+        fn event_methods(&self) -> Vec<String> {
+            self.frames
+                .iter()
+                .filter_map(|value| value.get("method").and_then(Value::as_str).map(str::to_string))
+                .collect()
+        }
+    }
+
+    /// Second client on the mode-0600 socket (`docs/16b-mcp-browser.md` §3.5).
+    /// `refused` sends methods the allowlist rejects and never attaches. Otherwise
+    /// the client attaches to the capture tab, enables `Page`, and must see the
+    /// load event of the next navigation with no `Network.*` event.
+    fn second_cdp_client_scenario(refused: bool, name: &str) -> (bool, Vec<String>, String) {
         use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
         static PORT: AtomicU16 = AtomicU16::new(0);
         let site = TestSite::start(|_m, path| match path {
@@ -911,117 +1064,95 @@ mod tests {
         let port = site.port;
         let config = live_config(vec![format!("localhost:{port}")], name, true);
         let (capture, info) = BrowserCapture::start(config).expect("start");
-        let ws = info.cdp.expect("cdp").browser_ws;
+        let access = info.cdp.expect("cdp");
+        let socket_path = access.socket.expect("unix socket");
+        let target = access.page_target_id.expect("capture tab");
 
-        // The agent connects mid-session: the page is already at a known URL.
         let idle = capture
-            .navigate(&format!("http://localhost:{port}/idle"), true, Duration::from_secs(20))
+            .navigate(
+                &format!("http://localhost:{port}/idle"),
+                true,
+                Duration::from_secs(20),
+            )
             .expect("navigate idle");
         assert!(idle.loaded);
         let running = Arc::new(AtomicBool::new(true));
         let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let client_running = running.clone();
         let client_log = log.clone();
-        let idle_prefix = format!("http://localhost:{port}/idle");
         let (ready_tx, ready_rx) = channel::<()>();
         let client = thread::spawn(move || {
-            let (mut socket, _) = tungstenite::connect(ws.as_str()).expect("second client");
-            if let tungstenite::stream::MaybeTlsStream::Plain(stream) = socket.get_ref() {
-                let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
-            }
-            let mut next = 0u64;
-            let mut send = |socket: &mut tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>,
-                            method: &str,
-                            params: Value,
-                            session: Option<&str>| {
-                next += 1;
-                let mut msg = json!({ "id": next, "method": method, "params": params });
-                if let Some(s) = session {
-                    msg["sessionId"] = json!(s);
+            let mut pipe = PipeClient::connect(&socket_path);
+            if refused {
+                let calls = [
+                    (
+                        "Target.setAutoAttach",
+                        json!({"autoAttach": true, "flatten": true, "waitForDebuggerOnStart": true}),
+                        "not allowed",
+                    ),
+                    (
+                        "Target.setDiscoverTargets",
+                        json!({"discover": true}),
+                        "not allowed",
+                    ),
+                    ("Network.enable", json!({}), "not allowed"),
+                    (
+                        "Runtime.runIfWaitingForDebugger",
+                        json!({}),
+                        "not one this client attached",
+                    ),
+                ];
+                for (index, (method, params, needle)) in calls.iter().enumerate() {
+                    let reply = pipe.call(index as u64 + 1, method, params.clone(), None);
+                    let message = reply["error"]["message"].as_str().unwrap_or("");
+                    client_log.lock().unwrap().push(format!(
+                        "refused {method}: {message} [{}]",
+                        if message.contains(needle) { "ok" } else { "MISSING" }
+                    ));
                 }
-                socket
-                    .send(tungstenite::Message::Text(msg.to_string().into()))
-                    .expect("send");
-                next
-            };
-            // The capture's main page target.
-            let id_targets = send(&mut socket, "Target.getTargets", json!({}), None);
-            send(&mut socket, "Target.setDiscoverTargets", json!({ "discover": true }), None);
-            let mut id_attach = 0u64;
-            let mut announced = false;
+            } else {
+                let attached = pipe.call(
+                    1,
+                    "Target.attachToTarget",
+                    json!({"targetId": target, "flatten": true}),
+                    None,
+                );
+                let session = attached["result"]["sessionId"]
+                    .as_str()
+                    .map(str::to_string);
+                match session {
+                    Some(session) => {
+                        let enabled = pipe.call(2, "Page.enable", json!({}), Some(&session));
+                        if enabled.get("error").is_some() {
+                            client_log
+                                .lock()
+                                .unwrap()
+                                .push(format!("Page.enable failed {enabled}"));
+                        }
+                        client_log
+                            .lock()
+                            .unwrap()
+                            .push(format!("attached session={session}"));
+                    }
+                    None => {
+                        client_log
+                            .lock()
+                            .unwrap()
+                            .push(format!("attach failed {attached}"));
+                    }
+                }
+            }
+            let _ = ready_tx.send(());
             while client_running.load(Ordering::SeqCst) {
-                let text = match socket.read() {
-                    Ok(tungstenite::Message::Text(t)) => t.to_string(),
-                    Ok(_) => continue,
-                    Err(tungstenite::Error::Io(e))
-                        if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) =>
-                    {
-                        continue
-                    }
-                    Err(_) => break,
-                };
-                let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
-                if let Some(m) = v.get("method").and_then(Value::as_str) {
-                    if m.starts_with("Target.") {
-                        client_log.lock().unwrap().push(format!("evento {m} {} {}", v["params"]["targetInfo"]["type"], v["params"]["targetInfo"]["url"]));
-                    }
-                }
-                if v.get("error").is_some() {
-                    client_log.lock().unwrap().push(format!("second client: error {}", v["error"]));
-                }
-                if v.get("id").and_then(Value::as_u64) == Some(id_targets) {
-                    let target = v["result"]["targetInfos"]
-                        .as_array()
-                        .and_then(|a| {
-                            a.iter().find(|t| {
-                                t["type"] == "page"
-                                    && t["url"].as_str().map(|u| u.starts_with(&idle_prefix)).unwrap_or(false)
-                            })
-                        })
-                        .cloned();
-                    if let Some(t) = target {
-                        id_attach = send(
-                            &mut socket,
-                            "Target.attachToTarget",
-                            json!({ "targetId": t["targetId"], "flatten": true }),
-                            None,
-                        );
-                    }
-                } else if v.get("id").and_then(Value::as_u64) == Some(id_attach) && id_attach != 0 {
-                    let page_session = v["result"]["sessionId"].as_str().map(str::to_string);
-                    if let Some(sid) = &page_session {
-                        send(
-                            &mut socket,
-                            "Target.setAutoAttach",
-                            json!({ "autoAttach": true, "flatten": true, "waitForDebuggerOnStart": true }),
-                            Some(sid),
-                        );
-                        send(&mut socket, "Page.enable", json!({}), Some(sid));
-                        send(&mut socket, "Network.enable", json!({}), Some(sid));
-                        if !announced {
-                            announced = true;
-                            let _ = ready_tx.send(());
-                        }
-                    }
-                } else if v["method"] == "Target.attachedToTarget" {
-                    let kind = v["params"]["targetInfo"]["type"].as_str().unwrap_or("?").to_string();
-                    let waiting = v["params"]["waitingForDebugger"].as_bool().unwrap_or(false);
-                    client_log
-                        .lock()
-                        .unwrap()
-                        .push(format!("second client: attached {kind} waiting={waiting}"));
-                    if waiting && cooperative {
-                        if let Some(sid) = v["params"]["sessionId"].as_str() {
-                            send(&mut socket, "Runtime.runIfWaitingForDebugger", json!({}), Some(sid));
-                        }
-                    }
-                }
+                pipe.pump(Duration::from_millis(200));
             }
-            let _ = socket.close(None);
+            for method in pipe.event_methods() {
+                client_log.lock().unwrap().push(format!("event {method}"));
+            }
         });
         ready_rx
             .recv_timeout(Duration::from_secs(15))
-            .expect("second client attached");
+            .expect("second client ready");
 
         thread::sleep(Duration::from_millis(500));
         let result = capture
@@ -1036,114 +1167,69 @@ mod tests {
                 .unwrap_or_default();
         let worker_in_session = session_json.contains("from-worker");
         let worker_hit = site.seen_paths().iter().any(|p| p.contains("/from-worker"));
+        let log_lines = log.lock().unwrap().clone();
+        let saw_load = log_lines
+            .iter()
+            .any(|line| line == "event Page.loadEventFired");
+        let leaked = log_lines.iter().any(|line| line.starts_with("event Network."));
+        let refused_ok = log_lines.iter().filter(|line| line.contains("[ok]")).count() >= 4;
+        let client_ok = if refused { refused_ok } else { saw_load };
         let summary = format!(
-            "{name}: navigate.loaded={} graceful={} worker_reached_server={} worker_in_session={}",
-            result.loaded, report.graceful, worker_hit, worker_in_session
+            "{name}: navigate.loaded={} graceful={} worker_reached_server={} worker_in_session={} load={} leaked_network={}",
+            result.loaded, report.graceful, worker_hit, worker_in_session, saw_load, leaked
         );
         println!("{summary}");
-        let log_lines = log.lock().unwrap().clone();
-        for l in &log_lines {
-            println!("  {l}");
+        for line in &log_lines {
+            println!("  {line}");
         }
-        (result.loaded && report.graceful && worker_hit && worker_in_session, log_lines, summary)
+        (
+            result.loaded && report.graceful && worker_hit && worker_in_session && client_ok && !leaked,
+            log_lines,
+            summary,
+        )
     }
 
-    /// Scenario A: the agent resumes the targets it paused. Expected: nothing hangs and
-    /// the worker is captured by our client.
+    /// Scenario A: the socket client attaches and enables Page. It cannot pause
+    /// targets (`Target.setAutoAttach` is not allowed). The worker is still captured,
+    /// the client sees the load event, and capture `Network.*` events do not arrive.
     #[test]
     #[ignore]
     fn second_cdp_client_cooperative() {
-        let (ok, _log, summary) = second_cdp_client_scenario(true, "cooperative");
+        let (ok, _log, summary) = second_cdp_client_scenario(false, "cooperative");
         assert!(ok, "{summary}");
     }
 
-    /// Scenario B: the agent asks for `waitForDebuggerOnStart` and NEVER resumes. The
-    /// result is measured and printed; the only requirement is that the capture does not
-    /// hang and shuts down gracefully.
+    /// Scenario B: the client sends the old auto-attach and Network methods. Each is
+    /// refused, nothing hangs, the worker is still captured, and no `Network.*`
+    /// event is delivered.
     #[test]
     #[ignore]
     fn second_cdp_client_never_resumes() {
-        let (_ok, _log, summary) = second_cdp_client_scenario(false, "never-resumes");
-        println!("RESULTADO B: {summary}");
-    }
-
-    /// Generates three real sessions (headless Chrome against loopback servers that
-    /// IMITATE documented signals) for the end-to-end test of the `recon` crate:
-    /// `plain`, `unsolved`, `solved`. Run by `recon/scripts/live_e2e.sh`.
-    /// Variable: `SL_RECON_E2E_DIR`.
-    #[test]
-    #[ignore]
-    fn live_recon_scenarios() {
-        let root = PathBuf::from(
-            std::env::var("SL_RECON_E2E_DIR").expect("SL_RECON_E2E_DIR (output directory)"),
+        let (ok, log, summary) = second_cdp_client_scenario(true, "never-resumes");
+        assert!(ok, "{summary}");
+        assert!(
+            log.iter().all(|line| !line.starts_with("event Network.")),
+            "{log:?}"
         );
-        std::fs::create_dir_all(&root).unwrap();
-        for scenario in ["plain", "unsolved", "solved"] {
-            let site = TestSite::start(move |_m, path| {
-                let route = path.split('?').next().unwrap_or("/");
-                match (scenario, route, path.contains("r=1")) {
-                    ("plain", "/", _) => Reply::html(
-                        "<html><body><h1>ok</h1><script>fetch('/api/list').then(r=>r.text());</script></body></html>",
-                    )
-                    .header("cf-ray", "8abc123def456-GRU")
-                    .header("Set-Cookie", "__cf_bm=SEGREDO-BM-1; Path=/; HttpOnly"),
-                    ("plain", "/api/list", _) => Reply {
-                        status: 200,
-                        headers: vec![("Content-Type".into(), "application/json".into())],
-                        body: "{\"itens\":[1,2,3]}".to_string(),
-                    },
-                    ("unsolved", "/", _) => Reply::html(
-                        "<html><body>Verifying…<script src='https://turnstile.blocked.invalid.test/api.js'></script></body></html>",
-                    )
-                    .status(403)
-                    .header("cf-mitigated", "challenge")
-                    .header("cf-ray", "8abc123def456-GRU")
-                    .header("Set-Cookie", "cf_chl_rc_ni=1; Path=/"),
-                    ("solved", "/", false) => Reply::html(
-                        "<html><body>Verifying…<script>setTimeout(()=>location.replace('/?r=1'),50)</script></body></html>",
-                    )
-                    .status(403)
-                    .header("cf-mitigated", "challenge")
-                    .header("cf-ray", "8abc123def456-GRU"),
-                    ("solved", "/", true) => Reply::html(
-                        "<html><body><h1>liberado</h1><script>fetch('/api/data').then(r=>r.text());</script></body></html>",
-                    )
-                    .header("cf-ray", "8abc123def457-GRU")
-                    .header("Set-Cookie", "cf_clearance=SEGREDO-CLEARANCE-9; Path=/; HttpOnly"),
-                    ("solved", "/api/data", _) => Reply {
-                        status: 200,
-                        headers: vec![("Content-Type".into(), "application/json".into())],
-                        body: "{\"ok\":true}".to_string(),
-                    },
-                    _ => Reply::html("x").status(404),
-                }
-            });
-            let port = site.port;
-            let mut config = live_config(vec![format!("localhost:{port}")], scenario, false);
-            config.session_dir = root.join(scenario);
-            let (capture, _info) = BrowserCapture::start(config).expect("start");
-            let result = capture
-                .navigate(&format!("http://localhost:{port}/"), true, Duration::from_secs(20))
-                .expect("navigate");
-            println!("{scenario}: loaded={}", result.loaded);
-            thread::sleep(Duration::from_millis(1800));
-            let report = capture.stop().expect("stop");
-            assert!(report.graceful, "{scenario}");
-            println!("{scenario}: {} requests; server saw {:?}", report.requests, site.seen_paths());
-        }
     }
 
-    /// The CDP address is only handed out with our client attached to the initial target:
-    /// the FIRST action of an external agent (attach to the capture tab and navigate,
-    /// without waiting for anything) is already seen by our capture, with the `Network.*`
-    /// events of that same tab. Requirement from the lead, derived from finding 5 of
+    /// The socket is handed over only after our client is attached to the initial
+    /// target. The agent's first actions on that socket — attach, receive
+    /// `Page.loadEventFired`, click with `Input` — are in our capture, and capture
+    /// `Network.*` events (including `Network.*ExtraInfo`) never reach the socket.
     /// `docs/16b-mcp-browser.md` §3.5.
     #[test]
     #[ignore]
     fn agent_first_action_is_captured() {
         let site = TestSite::start(|_m, path| {
-            if path.starts_with("/first") {
-                Reply::html("<html><body><img src='/sub.png?m=agent-sub'></body></html>")
+            let route = path.split('?').next().unwrap_or(path);
+            if route == "/first" {
+                Reply::html(
+                    "<html><body style='margin:0'>\
+                     <a href='/clicked?m=agent-click' style='position:fixed;left:0;top:0;width:200px;height:120px;display:block;z-index:2'>go</a>\
+                     <img src='/sub.png?m=agent-sub' style='position:fixed;left:300px;top:300px'>\
+                     </body></html>",
+                )
             } else {
                 Reply::html("x")
             }
@@ -1152,45 +1238,121 @@ mod tests {
         let config = live_config(vec![format!("localhost:{port}")], "agent-first", true);
         let (capture, info) = BrowserCapture::start(config).expect("start");
         let access = info.cdp.expect("cdp exposed");
-        let target_id = access.page_target_id.clone().expect("capture tab");
+        let socket_path = access.socket.expect("unix socket");
+        let target_id = access.page_target_id.expect("capture tab");
 
-        // Agent's immediate action: attaches to the capture tab and navigates.
-        let (mut socket, _) = tungstenite::connect(access.browser_ws.as_str()).expect("agent");
-        let mut call = |method: &str, params: Value, session: Option<&str>| -> Value {
-            use std::sync::atomic::{AtomicU64, Ordering};
-            static NEXT: AtomicU64 = AtomicU64::new(1);
-            let id = NEXT.fetch_add(1, Ordering::SeqCst);
-            let mut msg = json!({ "id": id, "method": method, "params": params });
-            if let Some(s) = session {
-                msg["sessionId"] = json!(s);
-            }
-            socket.send(tungstenite::Message::Text(msg.to_string().into())).expect("send");
-            let deadline = Instant::now() + Duration::from_secs(15);
-            while Instant::now() < deadline {
-                if let Ok(tungstenite::Message::Text(t)) = socket.read() {
-                    if let Ok(v) = serde_json::from_str::<Value>(&t) {
-                        if v["id"].as_u64() == Some(id) {
-                            return v;
-                        }
-                    }
-                }
-            }
-            panic!("no response to {method}");
-        };
-        let attached = call(
+        let mut pipe = PipeClient::connect(&socket_path);
+        let attached = pipe.call(
+            1,
             "Target.attachToTarget",
-            json!({ "targetId": target_id, "flatten": true }),
+            json!({"targetId": target_id, "flatten": true}),
             None,
         );
-        let session = attached["result"]["sessionId"].as_str().expect("agent session").to_string();
-        let nav = call(
+        let session = attached["result"]["sessionId"]
+            .as_str()
+            .expect("agent session")
+            .to_string();
+        let enabled = pipe.call(2, "Page.enable", json!({}), Some(&session));
+        assert!(enabled.get("error").is_none(), "{enabled}");
+
+        let loads = |frames: &[Value]| {
+            frames
+                .iter()
+                .filter(|value| {
+                    value["method"] == "Page.loadEventFired" && value["sessionId"] == session
+                })
+                .count()
+        };
+        let before = loads(&pipe.frames);
+        let nav = pipe.call(
+            3,
             "Page.navigate",
-            json!({ "url": format!("http://localhost:{port}/first?m=agent-first") }),
+            json!({"url": format!("http://localhost:{port}/first?m=agent-first")}),
             Some(&session),
         );
+        assert!(nav.get("error").is_none(), "{nav}");
         assert!(nav["result"]["errorText"].is_null(), "{nav}");
-        thread::sleep(Duration::from_millis(2000));
-        drop(socket);
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while loads(&pipe.frames) == before {
+            if Instant::now() >= deadline {
+                panic!(
+                    "no load event on {session}; events={:?}",
+                    pipe.event_methods()
+                );
+            }
+            pipe.pump(Duration::from_millis(200));
+        }
+
+        let doc = pipe.call(4, "DOM.getDocument", json!({}), Some(&session));
+        let root = doc["result"]["root"]["nodeId"].as_u64().expect("root node");
+        let found = pipe.call(
+            5,
+            "DOM.querySelector",
+            json!({"nodeId": root, "selector": "a"}),
+            Some(&session),
+        );
+        let node = found["result"]["nodeId"].as_u64().unwrap_or(0);
+        assert!(node != 0, "anchor missing: {found}");
+        let model = pipe.call(6, "DOM.getBoxModel", json!({"nodeId": node}), Some(&session));
+        let quad = model["result"]["model"]["content"]
+            .as_array()
+            .expect("content quad");
+        let mut xs = Vec::new();
+        let mut ys = Vec::new();
+        for (index, value) in quad.iter().enumerate() {
+            let n = value.as_f64().unwrap_or(0.0);
+            if index % 2 == 0 {
+                xs.push(n);
+            } else {
+                ys.push(n);
+            }
+        }
+        assert!(!xs.is_empty() && !ys.is_empty(), "{model}");
+        let x = xs.iter().sum::<f64>() / xs.len() as f64;
+        let y = ys.iter().sum::<f64>() / ys.len() as f64;
+        let pressed = pipe.call(
+            7,
+            "Input.dispatchMouseEvent",
+            json!({"type": "mousePressed", "x": x, "y": y, "button": "left", "buttons": 1, "clickCount": 1}),
+            Some(&session),
+        );
+        assert!(pressed.get("error").is_none(), "{pressed}");
+        let released = pipe.call(
+            8,
+            "Input.dispatchMouseEvent",
+            json!({"type": "mouseReleased", "x": x, "y": y, "button": "left", "buttons": 0, "clickCount": 1}),
+            Some(&session),
+        );
+        assert!(released.get("error").is_none(), "{released}");
+
+        let click_deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < click_deadline
+            && !site
+                .seen_paths()
+                .iter()
+                .any(|path| path.contains("m=agent-click"))
+        {
+            pipe.pump(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(100));
+        }
+        assert!(
+            site.seen_paths()
+                .iter()
+                .any(|path| path.contains("m=agent-click")),
+            "click did not request the link: {:?} box=({x},{y})",
+            site.seen_paths()
+        );
+        pipe.pump(Duration::from_millis(300));
+        let leaked: Vec<String> = pipe
+            .event_methods()
+            .into_iter()
+            .filter(|method| method.starts_with("Network."))
+            .collect();
+        assert!(
+            leaked.is_empty(),
+            "capture Network events reached the socket: {leaked:?}"
+        );
+        drop(pipe);
 
         let report = capture.stop().expect("stop");
         assert!(report.graceful);
@@ -1201,10 +1363,20 @@ mod tests {
         let seen_in_cdp = |needle: &str| {
             cdp_events
                 .lines()
-                .any(|l| l.contains("\"Network.requestWillBeSent\"") && l.contains(needle))
+                .any(|line| line.contains("\"Network.requestWillBeSent\"") && line.contains(needle))
         };
-        assert!(seen_in_cdp("m=agent-first"), "the agent's navigation is not in the capture's CDP");
-        assert!(seen_in_cdp("m=agent-sub"), "the subresource is not in the capture's CDP");
+        assert!(
+            seen_in_cdp("m=agent-first"),
+            "the agent's navigation is not in the capture's CDP"
+        );
+        assert!(
+            seen_in_cdp("m=agent-sub"),
+            "the subresource is not in the capture's CDP"
+        );
+        assert!(
+            seen_in_cdp("m=agent-click"),
+            "the click is not in the capture's CDP"
+        );
         println!("server saw: {:?}", site.seen_paths());
     }
 

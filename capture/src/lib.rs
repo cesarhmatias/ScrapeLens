@@ -4,8 +4,10 @@
 //! - its own temporary profile (never the personal profile), removed at the end;
 //! - our client talks to Chrome over a **pipe** (`--remote-debugging-pipe`,
 //!   no open port). `expose_cdp` does not open a TCP port either: the agent
-//!   gets a mode-0600 unix socket that refuses cookie dumps, download changes,
-//!   and `file:` / `chrome:` URLs (`cdp_expose`);
+//!   gets a mode-0600 unix socket. It forwards only events from sessions that
+//!   client attached, never capture `Network.*` events, and allows only Page,
+//!   Runtime, DOM, Input, Accessibility, Target attach/list/create, and
+//!   Browser.getVersion. `file:` and `chrome:` URLs are refused (`cdp_expose`);
 //! - it only terminates the process this module started;
 //! - the NetLog is written to the session directory and imported by the core;
 //! - no network beyond local debugging; no certificate is installed;
@@ -927,9 +929,11 @@ fn chrome_args(
         // No port at all: Chrome reads commands on fd 3 and writes them on fd 4.
         args.insert(args.len() - 1, "--remote-debugging-pipe".to_string());
     } else {
-        // Ephemeral port ONLY on 127.0.0.1. Without `--remote-allow-origins`, CDP clients
-        // (us, Playwright, DevTools MCP) do not send an Origin; a web page
-        // that tries the WebSocket (Origin present) is refused by Chrome.
+        // Ephemeral port ONLY on 127.0.0.1, and only when the transport is the port
+        // (`SCRAPELENS_CDP_TRANSPORT=port`). `expose_cdp` does not use it: the agent
+        // gets the mode-0600 socket in front of the pipe. Without
+        // `--remote-allow-origins`, a client that sends no Origin is accepted; a
+        // web page that tries the WebSocket (Origin present) is refused by Chrome.
         args.insert(args.len() - 1, "--remote-debugging-port=0".to_string());
         args.insert(args.len() - 1, "--remote-debugging-address=127.0.0.1".to_string());
     }
@@ -1694,6 +1698,12 @@ struct Cdp {
     setup_acked: std::collections::HashSet<(String, String)>,
     /// External `expose_cdp` commands in flight, by the id sent to Chrome.
     external: HashMap<u64, cdp_expose::ExternalPending>,
+    /// Socket clients and the sessions each one attached.
+    fanout: cdp_expose::ExternalFanout,
+    /// Chrome command id → target id for an external `Target.attachToTarget`
+    /// that has not been answered yet. The matching `Target.attachedToTarget`
+    /// belongs to that client; capture must not detach it as a duplicate.
+    external_attaches: HashMap<u64, String>,
 }
 
 /// Target setup command awaiting its ACK.
@@ -1728,6 +1738,8 @@ impl Cdp {
             page_load_events: 0,
             setup_acked: std::collections::HashSet::new(),
             external: HashMap::new(),
+            fanout: cdp_expose::ExternalFanout::default(),
+            external_attaches: HashMap::new(),
         })
     }
 
@@ -2254,17 +2266,26 @@ impl Cdp {
                     target_id: target_id.clone(),
                     target_type: target_type.clone(),
                 };
-                if !Self::skip_target_setup(&target_type) {
-                    self.configured_target_primary
-                        .entry(target_id.clone())
-                        .or_insert(session_id.clone());
-                }
                 let parent_wire = value.get("sessionId").and_then(Value::as_str);
-                self.setup_seen
-                    .insert(session_id.clone(), attached.clone());
-                // Does not block: it only sends the commands. A send failure (socket)
-                // shows up as a read error in the capture loop.
-                let _ = self.setup_attached_target(socket, attached, waiting, parent_wire);
+                // A socket client's own attach. Configuring it would see the capture
+                // session as primary and detach the client (`setup_duplicate_target_session`).
+                let client_attach = self.fanout.owns_session(&session_id)
+                    || self
+                        .external_attaches
+                        .values()
+                        .any(|pending| pending == &target_id);
+                if !client_attach {
+                    if !Self::skip_target_setup(&target_type) {
+                        self.configured_target_primary
+                            .entry(target_id.clone())
+                            .or_insert(session_id.clone());
+                    }
+                    self.setup_seen
+                        .insert(session_id.clone(), attached.clone());
+                    // Does not block: it only sends the commands. A send failure (socket)
+                    // shows up as a read error in the capture loop.
+                    let _ = self.setup_attached_target(socket, attached, waiting, parent_wire);
+                }
             }
         }
         if !cdp_records_method(method) {
@@ -2493,7 +2514,10 @@ impl Cdp {
         socket: &mut Transport,
         value: &Value,
     ) {
-        if cdp_expose::claim_external(&mut self.external, value) {
+        if let Some(id) = value.get("id").and_then(Value::as_u64) {
+            self.external_attaches.remove(&id);
+        }
+        if cdp_expose::claim_external(&mut self.fanout, &mut self.external, value) {
             return;
         }
         if let Some(id) = value.get("id").and_then(Value::as_u64) {
@@ -2514,6 +2538,7 @@ impl Cdp {
             }
             return;
         }
+        self.fanout.forward_event(value);
         self.handle_incoming_event(socket, value);
     }
 

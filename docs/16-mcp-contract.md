@@ -532,12 +532,20 @@ Server rules:
   `readOnlyHint: false` (writes the session); `capture_status` and `site_profile` are
   read-only.
 - `expose_cdp=true` hands the agent a mode-0600 unix socket (after the
-  `16b` §4.1 gate), not a TCP port. Messages are NUL-terminated JSON.
-  `Network.getAllCookies`, `Browser.setDownloadBehavior`,
-  `Page.setDownloadBehavior`, and any `url` with a `file:` or `chrome:`
-  scheme are refused before they reach Chrome. The agent's other actions
-  through that socket do **not** go through this confirmation; what limits
-  them is that list plus the network allowlist enforced by Chrome.
+  `16b` §4.1 gate), not a TCP port and not a DevTools WebSocket. Playwright
+  MCP and the Chrome DevTools MCP are not supported clients. Messages are
+  NUL-terminated JSON. Allowed methods are `Page.*`, `Runtime.*`, `DOM.*`,
+  `Input.*`, `Accessibility.*`, `Target.attachToTarget`, `Target.getTargets`,
+  `Target.createTarget` and `Browser.getVersion`. Any other method is refused
+  before it reaches Chrome, including `Network.*`, `Storage.*`, `Fetch.*` and
+  the rest of `Browser.*` and `Target.*`. A top-level `params.url` with a
+  `file:` or `chrome:` scheme is refused. Events are forwarded only for
+  sessions this client attached; capture events such as `Network.*ExtraInfo`
+  are never forwarded. `Runtime.evaluate` can read page data and cookies that
+  are not HttpOnly, unmasked; the `start_capture` elicitation says so. The
+  agent's other actions through that socket do **not** go through this
+  confirmation; what limits them is that allowlist plus the network allowlist
+  enforced by Chrome.
 
 Tests: `mcp/tests/live.rs` (policy and map, counted backend),
 `mcp/tests/e2e_capture.rs` (real server with the fake browser from the example

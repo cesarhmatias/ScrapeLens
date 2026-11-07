@@ -16,12 +16,15 @@ Gatekeeper, solving a CAPTCHA or challenge.
 
 Tools in this section: `start_capture`, `navigate`, `capture_status`,
 `stop_capture` and `site_profile`. **`act` does not exist in this wave**: following D6
-(item 3), ScrapeLens opens Chrome and **hands over CDP access on loopback**; the
-agent acts with its own tool (for example the Playwright
-MCP `--cdp-endpoint` or the Chrome DevTools MCP). Reasons: (a) we do not reimplement an input
-API; (b) ScrapeLens stays only an observer. Accepted consequence: the
-agent's actions in the browser **do not go through ScrapeLens confirmation**; what
-limits them is the network allowlist (§2.2), enforced by Chrome itself.
+(item 3), ScrapeLens opens Chrome and, only when `expose_cdp` is true, hands the
+agent a mode-0600 unix socket in front of the pipe. Playwright MCP and the Chrome
+DevTools MCP are not supported clients of that socket. The socket allows `Page`,
+`Runtime`, `DOM`, `Input`, `Accessibility`, `Target.attachToTarget`,
+`Target.getTargets`, `Target.createTarget` and `Browser.getVersion`, and refuses
+every other method. `Runtime.evaluate` can read page data and cookies that are
+not HttpOnly, unmasked. The agent's calls do not go through another ScrapeLens
+confirmation; what limits them is that allowlist, the `file:` / `chrome:` refusal,
+and the network allowlist (§2.2).
 
 ## 2. Security model
 
@@ -136,13 +139,13 @@ loading a site; these are the ones that change what the server sees):
 | `--enable-quic` | QUIC is already the default; kept for h3 (the project rule is not to disable QUIC) |
 | `--disable-extensions`, `--disable-default-apps`, `--password-store=basic`, `--use-mock-keychain`, `--no-first-run`, `--no-default-browser-check`, `--disable-search-engine-choice-screen`, `--disable-component-extensions-with-background-pages` | UI/profile/keychain; no network effect |
 | `--net-log-capture-mode=Everything`, `--log-net-log` | only record (cookies and headers in the NetLog: see §2.4) |
-| `--remote-debugging-pipe` (or port with `expose_cdp`) | **turns on `navigator.webdriver = true`** in the page (measured, `docs/20-captcha-google.md` §4.2); D7 passes the flag on the next line to undo this |
+| `--remote-debugging-pipe` (`expose_cdp` uses this pipe and does not open a port) | **turns on `navigator.webdriver = true`** in the page (measured, `docs/20-captcha-google.md` §4.2); D7 passes the flag on the next line to undo this |
 | `--disable-blink-features=AutomationControlled` (**D7, always**) | `navigator.webdriver` goes back to `false`, even with the CDP on. It does not touch the network or what is captured. See the paragraph below |
 | `--headless=new` (only with `headless`) | the User-Agent and the browser fingerprint change (`HeadlessChrome`); the App default is a visible window. **Relevant to `site_profile`**: an anti-bot challenge under headless may not occur with regular Chrome |
 
 **Automation notice suppressed by default (D7, 2026-11-03).** By user decision
 (`docs/01-decisions.md` D7), **every** capture carries `--disable-blink-features=AutomationControlled`:
-the App's regular one and the MCP's controlled one, on pipe and on port (`expose_cdp`), in any
+the App's regular one and the MCP's controlled one, on the pipe (including `expose_cdp`), in any
 `NetworkMode`, with or without `headless`. The flag goes into `chrome_args()`; if there is already
 a `--disable-blink-features` with other values, the values are **merged into a single flag**
 (`merge_blink_features`, without duplicating the flag or the values). Measured: without it the page reads
@@ -293,7 +296,7 @@ apply:
 
 | Tool | Effect | Confirmation |
 |---|---|---|
-| `start_capture` | starts a Chrome process; outbound traffic to the listed hosts; optionally opens the CDP port to the agent | **always**; the text must show `allowed_hosts`, `third_party_hosts`, `expose_cdp`, the binary and the notice from §2.4 |
+| `start_capture` | starts a Chrome process; outbound traffic to the listed hosts; optionally hands the agent the mode-0600 CDP socket | **always**; the text must show `allowed_hosts`, `third_party_hosts`, `expose_cdp`, the binary and the notice from §2.4 |
 | `navigate` | top-level GET to an allowlist host | **not per call** (covered by the start confirmation); refuses outside the allowlist |
 | `stop_capture` | terminates the started Chrome and writes the session | no |
 | `capture_status`, `site_profile` | read | no |
@@ -514,26 +517,35 @@ Leader's decision and current state:
   green. The live tests of `capture/` without `expose_cdp` (allowlist by events,
   8 port paths, symlinks, `site_profile` scenarios) also run
   on pipe.
-- **With `expose_cdp: true` the port is inherent to the feature.** It stays like this:
-  ephemeral port, `--remote-debugging-address=127.0.0.1` and **without
-  `--remote-allow-origins`**. The `lsof` of the same test shows the `LISTEN` only on
-  `127.0.0.1:<port>` (nothing on `*` or `[::]`). A WebSocket with
-  `Origin: https://evil.example` gets **403**; without `Origin` (us, Playwright,
-  Chrome DevTools MCP) it gets **101**. Web pages, therefore, do not reach the
-  port.
-- **Risk that remains with `expose_cdp:true` (documented, not mitigable here).** The
-  port has no authentication. Any process that reaches
-  `127.0.0.1:<port>`, **of the same user or of another user of the same
-  machine**, reads `GET /json/version` (which returns the browser's WebSocket
-  URL) and takes control of the whole Chrome: executing JavaScript in the
-  pages, reading cookies and bodies of the session, navigating within the allowlist (the network
-  stays limited to the approved hosts, but the process acts with the open
-  session). The window goes from launch to `stop_capture`; the port number is
-  visible in `ps`, in port scans and in the `DevToolsActivePort` of the temporary
-  profile (0700). The gate in §4.1 protects against the agent, not against
-  local third parties. Recommendation: `expose_cdp:true` only on a single-user
-  machine, for short captures, and the elicitation must show this warning. Without
-  `expose_cdp` there is no port and the risk does not exist.
+- **With `expose_cdp: true` Chrome still opens no TCP port.** The same pipe is
+  used. The agent receives `cdp.socket` (`<session>/cdp.sock`, mode 0600,
+  NUL-terminated JSON) and an empty `browserWs`. `cdp.http` is null. There is
+  no `DevToolsActivePort` for this feature and nothing listens on
+  `127.0.0.1`. Playwright MCP (`--cdp-endpoint`) and the Chrome DevTools MCP
+  are not supported: they need a DevTools WebSocket, and this socket is not one.
+- **Allowlist.** Before a call reaches Chrome, the method must be in `Page`,
+  `Runtime`, `DOM`, `Input` or `Accessibility`, or be exactly
+  `Target.attachToTarget`, `Target.getTargets`, `Target.createTarget` or
+  `Browser.getVersion`. Anything else, including `Network.*`, `Storage.*`,
+  `Fetch.*`, the rest of `Browser.*` and `Target.setAutoAttach`, is refused
+  with no Chrome round-trip. A top-level `params.url` of `file:` or `chrome:`
+  (trim, ASCII lowercase) is refused. `Page`, `Runtime`, `DOM`, `Input` and
+  `Accessibility` also require a `sessionId` from this client's own
+  `Target.attachToTarget`; a missing or foreign session is refused.
+- **Events.** The client sends `Target.attachToTarget` with `flatten: true`.
+  The socket then forwards only events whose `sessionId` is that session.
+  Capture events, including `Network.*ExtraInfo` and every other `Network.*`
+  event, are never forwarded, even when the session id matches. Browser-level
+  events with no client session (`Target.targetCreated`, and the capture's own
+  traffic) stay on the capture.
+- **Risk that remains with `expose_cdp:true`.** The socket has no
+  authentication. Any process of **this user** that can open the socket
+  (mode 0600) can call the allowlist, including `Runtime.evaluate`, and read
+  page data and cookies that are not HttpOnly, unmasked. It cannot call
+  `Network.getAllCookies` or `Storage.*`. The network stays limited to the
+  approved hosts. The socket exists from the moment `start` returns until
+  `stop_capture`. Recommendation: `expose_cdp:true` only for short captures.
+  The elicitation shows this warning. Without `expose_cdp` there is no socket.
 
 ## 3. Tools
 
@@ -565,7 +577,7 @@ MCP server, which keeps the `BrowserCapture` in a map):
   "chromePid": 1234,
   "browser": { "path": "…", "version": "Chrome/156.0.…", "userAgent": "…" },
   "allowlist": { "allowedHosts": [], "thirdPartyHosts": [], "resolverRules": "MAP * ~NOTFOUND, EXCLUDE …" },
-  "cdp": null | { "http": "http://127.0.0.1:PORT", "browserWs": "ws://127.0.0.1:PORT/devtools/browser/…", "pageTargetId": "…" },
+  "cdp": null | { "http": null, "browserWs": "", "socket": "/…/cdp.sock", "pageTargetId": "…" },
   "sensitiveNotice": "…",
   "warnings": []
 }
@@ -577,9 +589,10 @@ Errors (`code`): `allowlist_required`, `allowlist_too_broad`, `allowlist_invalid
 `session_dir`; `capture_already_running` belongs to the MCP server.
 
 `cdp` only appears with `expose_cdp:true` and only after the gate in §4.1. Without
-`expose_cdp` Chrome does not even open the port (pipe, §2.5); with it the port listens only
-on `127.0.0.1` and has the risk described in §2.5. `pageTargetId` is the capture tab (the one
-`navigate` uses): the agent attaches to it.
+`expose_cdp` Chrome opens no port (pipe, §2.5); with it there is still no TCP port.
+The agent gets `socket` (mode 0600) and attaches to `pageTargetId`, the capture tab
+(`navigate` uses that tab). `Runtime.evaluate` on the attached session can read page
+data and cookies that are not HttpOnly, unmasked. The risk is the one in §2.5.
 
 ### 3.2 `navigate`
 
@@ -638,27 +651,22 @@ the Core tools and for `site_profile`. If the caller drops the
 
 ### 3.5 Second CDP client
 
-With `expose_cdp:true`, the agent will connect its own client to the same Chrome.
-Our dedupe by `targetId` only applies to our connection. Measured on loopback
-(ignored tests `second_cdp_client_cooperative` and
-`second_cdp_client_never_resumes`, Chrome 156, headless): the second client
-connects in the middle of the session, attaches to the tab, does `Target.setAutoAttach
-{flatten:true, waitForDebuggerOnStart:true}` and the page creates a worker.
+With `expose_cdp:true`, the agent connects to the mode-0600 socket, not to a
+DevTools WebSocket. `Target.setAutoAttach` is refused, so the agent cannot
+pause targets or ask for `waitForDebuggerOnStart`. Ignored live tests, on the
+socket, with the test's own loopback server:
 
-| Scenario | Result |
-|---|---|
-| A. second client resumes the target (`runIfWaitingForDebugger`) | worker received by **both** with `waitingForDebugger:true`; full load; worker reaches the server and enters our session; graceful shutdown |
-| B. second client asks for `waitForDebuggerOnStart` and **never** resumes | identical: **our** `runIfWaitingForDebugger` releases the target (the resume applies to the target, not to the session); nothing hangs |
+| Scenario | Test | What it checks |
+|---|---|---|
+| A. The client attaches to the capture tab and enables `Page`; the capture then navigates | `second_cdp_client_cooperative` | The client receives `Page.loadEventFired` for its session and no `Network.*` event. The worker the page starts still reaches the server and the captured session. Shutdown is graceful. |
+| B. The client sends `Target.setAutoAttach`, `Target.setDiscoverTargets`, `Network.enable`, and `Runtime.runIfWaitingForDebugger` with no session | `second_cdp_client_never_resumes` | The first three are `not allowed`. `Runtime.runIfWaitingForDebugger` is in the Runtime domain, so it is refused because this client has not attached a session and does not reach Chrome. Nothing pauses a target. The capture does not hang, the worker is still captured, and no `Network.*` event is delivered. |
+| C. The client attaches, receives the load event, and clicks with `Input` | `agent_first_action_is_captured` | `Page.loadEventFired` arrives on the client's session. The navigation, the subresource and the click's request are in the captured session (`Network.requestWillBeSent`). Capture `Network.*` events, including `Network.*ExtraInfo`, are absent from the socket. |
 
-Limits of the measurement: one run of each (repeated 3× without divergence), one type
-of target (dedicated worker), a client written by us. **Closed by
-design (§4.1):** the agent only receives the address after our
-`Network.enable` and the auto-attach are active on the initial tab; targets created
-later (workers, popups) follow the setup pipeline measured above. **Not
-measured:** clients that use `Fetch` or paused debugging, and the race on
-child targets created *afterwards*, in which the agent resumes before our
-`Network.enable` arrives (it stayed inside in the tests). Product consequence: our
-resume also releases targets that the agent wanted to keep paused.
+The address is handed over only after our client is attached to the initial
+tab (§4.1). The agent then attaches itself (`Target.attachToTarget`,
+`flatten: true`) and receives events only for that new session. Our own
+`runIfWaitingForDebugger` still releases targets our auto-attach paused; the
+agent cannot pause them, because `Target.setAutoAttach` is refused.
 
 ## 4. Crate `scrapelens-capture` and public API (for the MCP server)
 
@@ -706,21 +714,20 @@ messages on a channel consumed by the recording loop (latency ≤ ~250 ms).
 
 ### 4.1 Exposed CDP gate
 
-`start` with `expose_cdp:true` only returns `cdp` (`http`, `browserWs`,
-`pageTargetId`) **after** our client is attached to the initial tab:
-`Network.enable` and `Target.setAutoAttach` with a **success ACK**, session
-configured and no setup command pending on it. If that does not happen within
-15 s, `start` fails (`browser_start_failed`) and Chrome is terminated; the
-address is never handed over. This way the agent cannot act (nor resume paused
-targets) before we do. Coverage: unit tests of the gate
-(`initial_target_gate_*`), live test `agent_first_action_is_captured` (the
-agent's first action, attaching to the capture tab and navigating without waiting, shows up
-in `Network.requestWillBeSent` in our session) and a mutation control (with the
-gate forced closed, `start` fails and nothing is handed over). Limit: with
-`expose_cdp:true` the port exists since launch (also in the
-`DevToolsActivePort` of the temporary profile, 0700); a local process that
-finds it bypasses the gate. The risk is the one in §2.5 and is outside the model; without
-`expose_cdp` there is no port (pipe).
+`start` with `expose_cdp:true` returns `cdp` (`socket`, empty `browserWs`,
+`http: null`, `pageTargetId`) **after** our client is attached to the initial
+tab: `Network.enable` and `Target.setAutoAttach` with a **success ACK**,
+session configured and no setup command pending on it. If that does not
+happen within 15 s, `start` fails (`browser_start_failed`) and Chrome is
+terminated; the socket path is never handed over. Chrome opens no TCP port
+in this mode: the socket is our proxy in front of the pipe, created only
+once that gate has passed, so the agent cannot act before we are attached.
+Coverage: the gate unit tests, the live tests in §3.5
+(`agent_first_action_is_captured` attaches on the socket, receives
+`Page.loadEventFired`, clicks with `Input`, and the request is in our
+`Network.requestWillBeSent`; capture events are not on the socket) and a
+mutation control (with the gate forced closed, `start` fails and nothing is
+handed over). Without `expose_cdp` there is no socket and no port (pipe).
 
 ## 5. `site_profile`
 
@@ -967,7 +974,7 @@ The numbers above are from the 2026-10-31 closing. The current scoreboards of `c
 Findings that changed the contract: (1) the Chrome 156 resolver **also denies literal
 IP** (§2.2); (2) the real gap is the **port**; (3) `session.requests` is not
 chronological (§5.2); (4) a reused presence cookie is not priming
-(§5.3); (5) the resume of the target by any client releases the target (§3.5).
+(§5.3); (5) our resume releases a target our auto-attach paused; the socket client cannot pause one, because `Target.setAutoAttach` is refused (§3.5).
 
 Limits of this delivery: the `live_e2e` sessions come from servers that **imitate**
 the signals; they prove the detector, not the presence of protection on any site.
@@ -985,7 +992,7 @@ Questions to the leader, with Capture's recommendation:
 
 1. **Strict allowlist vs. third parties** (§2.2): keep it strict with 2 passes
    (`third-party-blocked` indicates what to release).
-2. **`act`** out of this wave (§1): keep it so; the agent acts through the CDP port.
+2. **`act`** out of this wave (§1): keep it so; the agent acts through the mode-0600 socket. Playwright MCP and the Chrome DevTools MCP are not supported clients.
 3. **`undetermined`** as the fourth value of the recommendation: accept.
 4. **New crate `recon/`** outside `src-tauri` and `core`: accept (fast tests,
    reusable by the MCP server without pulling in Tauri).

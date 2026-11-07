@@ -65,7 +65,14 @@ fn expose_cdp_confirmation_warns_about_unauthenticated_port() {
         json!({"allowed_hosts": ["site.invalid.test"], "headless": true, "expose_cdp": true}),
     );
     let message = client.elicitations[0].clone();
-    for needle in ["has no authentication", "any local process", "control the whole Chrome"] {
+    for needle in [
+        "has no authentication",
+        "any local process",
+        "control the whole Chrome",
+        "Runtime.evaluate",
+        "not HttpOnly",
+        "page data",
+    ] {
         assert!(message.contains(needle), "missing {needle:?}: {message}");
     }
     client.finish();
