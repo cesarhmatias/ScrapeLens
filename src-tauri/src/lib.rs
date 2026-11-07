@@ -16,6 +16,7 @@ pub mod cli_test;
 pub mod commands;
 pub mod cookie_import;
 pub mod export;
+pub mod fsfd;
 pub mod listing;
 pub mod menu;
 pub mod prefs;
@@ -71,6 +72,8 @@ pub fn cleanup_orphans_on_start(state_root: &Path) {
 }
 
 pub fn run() {
+    // Before anything opens a browser or a relay: a Finder-launched app inherits launchd's soft limit.
+    fsfd::raise_open_files_limit();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
