@@ -20,6 +20,8 @@ pub enum Kind {
     Session,
     /// A file the export wrote (0600): `reveal_path`.
     SavedFile,
+    /// A file the user chose to import (HAR, NetLog, or an execution trace).
+    ImportFile,
 }
 
 /// More distinct grants than this in one run are refused. No real use reaches it.

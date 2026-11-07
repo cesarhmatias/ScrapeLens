@@ -118,28 +118,28 @@ export function VerdictKindChip({ kind: rawKind, title }: { kind: VerdictKind; t
 }
 
 /** Loads the session's assessment (cached in Rust); `undefined` without a persisted folder. */
-export function useAssess(dir: string | undefined, enabled = true) {
-  const [state, setState] = useState<{ dir: string; result?: AssessResult; error?: string } | null>(null);
+export function useAssess(token: string | undefined, enabled = true) {
+  const [state, setState] = useState<{ token: string; result?: AssessResult; error?: string } | null>(null);
   useEffect(() => {
-    if (!dir || !enabled) {
+    if (!token || !enabled) {
       setState(null);
       return;
     }
     let alive = true;
     bridge
-      .assessSession(dir)
-      .then((result) => alive && setState({ dir, result: normalizeAssessResult(result) }))
-      .catch((error) => alive && setState({ dir, error: String(error) }));
+      .assessSession(token)
+      .then((result) => alive && setState({ token, result: normalizeAssessResult(result) }))
+      .catch((error) => alive && setState({ token, error: String(error) }));
     return () => {
       alive = false;
     };
-  }, [dir, enabled]);
-  const current = state && state.dir === dir ? state : null;
+  }, [token, enabled]);
+  const current = state && state.token === token ? state : null;
   const map = useMemo<OutcomeMap>(
     () => new Map((current?.result?.outcomes ?? []).map((o) => [o.requestId, o])),
     [current?.result],
   );
-  return { map, result: current?.result, error: current?.error, loading: Boolean(dir && enabled && !current) };
+  return { map, result: current?.result, error: current?.error, loading: Boolean(token && enabled && !current) };
 }
 
 const signalLabel: Record<string, string> = {

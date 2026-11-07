@@ -242,12 +242,12 @@ function WarningStrip({ warnings }: { warnings: string[] }) {
 }
 
 export function OriginsTab({
-  sessionDir,
+  sessionToken,
   requestId,
   onOpen,
   verdicts,
 }: {
-  sessionDir?: string;
+  sessionToken?: string;
   requestId: string;
   onOpen: (id: string) => void;
   verdicts?: OutcomeMap;
@@ -260,24 +260,24 @@ export function OriginsTab({
     setOrigins(null);
     setChain(null);
     setError(null);
-    if (!sessionDir) return;
+    if (!sessionToken) return;
     let alive = true;
     bridge
-      .requestOrigins(sessionDir, requestId)
+      .requestOrigins(sessionToken, requestId)
       .then((result) => alive && setOrigins(result))
       .catch((reason) => alive && setError(String(reason)));
     bridge
-      .requestChain(sessionDir, requestId)
+      .requestChain(sessionToken, requestId)
       .then((result) => alive && setChain(result))
       .catch((reason) => alive && setError((current) => current ?? String(reason)));
     return () => {
       alive = false;
     };
-  }, [sessionDir, requestId]);
+  }, [sessionToken, requestId]);
 
   const groups = useMemo(() => (origins ? groupOrigins(origins.values) : []), [origins]);
 
-  if (!sessionDir) {
+  if (!sessionToken) {
     return <div className="empty">Value origins require a session with a persisted folder (open a capture or import a file).</div>;
   }
   if (error) {

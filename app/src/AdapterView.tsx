@@ -7,11 +7,11 @@ import { bridge, type AdapterViewDto } from "./bridge";
 const adapterLabel: Record<string, string> = { "natural-ajax": "Natural" };
 
 export function AdapterViewPanel({
-  sessionDir,
+  sessionToken,
   requestId,
   side,
 }: {
-  sessionDir?: string;
+  sessionToken?: string;
   requestId: string;
   side: "request" | "response";
 }) {
@@ -20,16 +20,16 @@ export function AdapterViewPanel({
   useEffect(() => {
     setView(null);
     setError(null);
-    if (!sessionDir) return;
+    if (!sessionToken) return;
     let alive = true;
     bridge
-      .adapterView(sessionDir, requestId, side)
+      .adapterView(sessionToken, requestId, side)
       .then((v) => alive && setView(v))
       .catch((e) => alive && setError(String(e)));
     return () => {
       alive = false;
     };
-  }, [sessionDir, requestId, side]);
+  }, [sessionToken, requestId, side]);
 
   if (error) {
     return (

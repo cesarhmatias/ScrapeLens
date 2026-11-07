@@ -246,11 +246,12 @@ pub(crate) fn header_payload(
 /// Page of summaries (P5). `limit` up to 2000; filters run here, not in the front end.
 #[tauri::command]
 pub async fn list_requests(
-    session_dir: String,
+    session_token: String,
     offset: usize,
     limit: usize,
     filter: Option<crate::listing::ListFilter>,
 ) -> Result<crate::listing::RequestPage, String> {
+    let session_dir = session_dir_for_token(&session_token)?;
     tauri::async_runtime::spawn_blocking(move || {
         let lazy = cached_session(Path::new(&session_dir))?;
         let page =
@@ -275,7 +276,8 @@ pub async fn list_requests(
 
 /// On-demand detail of a request (P5).
 #[tauri::command]
-pub async fn get_request(session_dir: String, id: String) -> Result<Value, String> {
+pub async fn get_request(session_token: String, id: String) -> Result<Value, String> {
+    let session_dir = session_dir_for_token(&session_token)?;
     tauri::async_runtime::spawn_blocking(move || {
         let lazy = cached_session(Path::new(&session_dir))?;
         let detail = crate::listing::detail(&lazy.session, &id)
@@ -470,8 +472,79 @@ pub(crate) fn ensure_not_recording(recording: bool) -> Result<(), String> {
     }
 }
 
+/// Which native dialog to open.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pick {
+    Folder,
+    OpenFile,
+    SaveFile,
+}
+
+/// A native dialog in the backend: the path the user chooses, or `None` if cancelled. The path
+/// stays here; a command that must hand a path to the webview returns a token for it instead.
+async fn pick_path(
+    app: &AppHandle,
+    title: &str,
+    pick: Pick,
+    filter: Option<(&str, &[&str])>,
+    default_name: Option<String>,
+) -> Result<Option<PathBuf>, String> {
+    let app = app.clone();
+    let title = title.to_string();
+    let filter = filter.map(|(name, extensions)| {
+        (name.to_string(), extensions.iter().map(|e| e.to_string()).collect::<Vec<String>>())
+    });
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = app.dialog().file().set_title(title);
+        if let Some(name) = default_name {
+            dialog = dialog.set_file_name(name);
+        }
+        if let Some((name, extensions)) = filter {
+            let extensions: Vec<&str> = extensions.iter().map(String::as_str).collect();
+            dialog = dialog.add_filter(name, &extensions);
+        }
+        match pick {
+            Pick::Folder => dialog.blocking_pick_folder(),
+            Pick::OpenFile => dialog.blocking_pick_file(),
+            Pick::SaveFile => dialog.blocking_save_file(),
+        }
+    })
+    .await
+    .map_err(|error| format!("the dialog was interrupted: {error}"))?;
+    picked
+        .map(|path| path.into_path().map_err(|error| format!("the chosen location is not usable: {error}")))
+        .transpose()
+}
+
+/// The file behind an import token (HAR, NetLog or trace).
+fn import_path_for_token(token: &str) -> Result<String, String> {
+    Ok(grants::resolve(token, &[grants::Kind::ImportFile])?.display().to_string())
+}
+
+/// The file to import: the token's file, or the file the user picks (`None` if cancelled).
+async fn import_path(
+    app: &AppHandle,
+    token: Option<String>,
+    title: &str,
+    name: &str,
+    extensions: &[&str],
+) -> Result<Option<String>, String> {
+    match token {
+        Some(token) => Ok(Some(import_path_for_token(&token)?)),
+        None => Ok(pick_path(app, title, Pick::OpenFile, Some((name, extensions)), None)
+            .await?
+            .map(|path| path.display().to_string())),
+    }
+}
+
 #[tauri::command]
-pub async fn import_har(app: AppHandle, path: String) -> Result<SessionPayload, String> {
+pub async fn import_har(
+    app: AppHandle,
+    token: Option<String>,
+) -> Result<Option<SessionPayload>, String> {
+    let Some(path) = import_path(&app, token, "Import HAR", "HAR", &["har", "json"]).await? else {
+        return Ok(None);
+    };
     run_loading(app, move |app| {
         ensure_not_recording(
             app.state::<AppState>()
@@ -485,10 +558,17 @@ pub async fn import_har(app: AppHandle, path: String) -> Result<SessionPayload, 
         persist_imported(app, imported, "HAR")
     })
     .await
+    .map(Some)
 }
 
 #[tauri::command]
-pub async fn import_netlog(app: AppHandle, path: String) -> Result<SessionPayload, String> {
+pub async fn import_netlog(
+    app: AppHandle,
+    token: Option<String>,
+) -> Result<Option<SessionPayload>, String> {
+    let Some(path) = import_path(&app, token, "Import NetLog", "NetLog", &["json"]).await? else {
+        return Ok(None);
+    };
     run_loading(app, move |app| {
         ensure_not_recording(
             app.state::<AppState>()
@@ -501,6 +581,7 @@ pub async fn import_netlog(app: AppHandle, path: String) -> Result<SessionPayloa
         persist_imported(app, imported, "NetLog")
     })
     .await
+    .map(Some)
 }
 
 /// Starting URL suggested in the UI: the saved preference, otherwise `SCRAPELENS_CAPTURE_URL`.
@@ -572,32 +653,25 @@ pub fn take_cli_action(state: State<'_, AppState>) -> Option<CliActionPayload> {
         });
     }
     let action = state.pending_cli.lock().ok()?.take()?;
-    let (kind, path) = match action {
-        CliAction::ImportHar(path) => ("import-har", path),
-        CliAction::ImportNetlog(path) => ("import-netlog", path),
-        CliAction::OpenCapture(path) => ("open-capture", path),
+    let (kind, path, token_kind) = match action {
+        CliAction::ImportHar(path) => ("import-har", path, grants::Kind::ImportFile),
+        CliAction::ImportNetlog(path) => ("import-netlog", path, grants::Kind::ImportFile),
+        CliAction::OpenCapture(path) => ("open-capture", path, grants::Kind::Session),
     };
-    if kind == "open-capture" {
-        return Some(match grants::issue(grants::Kind::Session, &path) {
-            Ok(token) => CliActionPayload {
-                kind: kind.to_string(),
-                path: String::new(),
-                message: None,
-                token: Some(token),
-            },
-            Err(message) => CliActionPayload {
-                kind: "error".to_string(),
-                path: String::new(),
-                message: Some(message),
-                token: None,
-            },
-        });
-    }
-    Some(CliActionPayload {
-        kind: kind.to_string(),
-        path: path.display().to_string(),
-        message: None,
-        token: None,
+    // The path stays in the backend: the webview gets a token for it.
+    Some(match grants::issue(token_kind, &path) {
+        Ok(token) => CliActionPayload {
+            kind: kind.to_string(),
+            path: String::new(),
+            message: None,
+            token: Some(token),
+        },
+        Err(message) => CliActionPayload {
+            kind: "error".to_string(),
+            path: String::new(),
+            message: Some(message),
+            token: None,
+        },
     })
 }
 
@@ -1075,13 +1149,19 @@ pub struct ChromeStatus {
 }
 
 #[tauri::command]
-pub fn set_chrome_path(
-    path: String,
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<ChromeInfo, String> {
-    let resolved = chrome::normalize_binary_path(Path::new(&path))
-        .ok_or_else(|| format!("could not find the Chrome binary at {path}"))?;
+pub async fn choose_chrome(app: AppHandle) -> Result<Option<ChromeInfo>, String> {
+    let pick = if cfg!(target_os = "macos") { Pick::Folder } else { Pick::OpenFile };
+    let Some(path) = pick_path(&app, "Select Google Chrome", pick, None, None).await? else {
+        return Ok(None);
+    };
+    set_chrome_path_from(&app, &path).map(Some)
+}
+
+/// Validates a Chrome the user picked and saves it (see `browser_check`); nothing is run.
+fn set_chrome_path_from(app: &AppHandle, path: &Path) -> Result<ChromeInfo, String> {
+    let state = app.state::<AppState>();
+    let resolved = chrome::normalize_binary_path(path)
+        .ok_or_else(|| format!("could not find the Chrome binary at {}", path.display()))?;
     if !resolved.is_file() {
         return Err(format!(
             "the chosen path is not an executable: {}",
@@ -1090,7 +1170,7 @@ pub fn set_chrome_path(
     }
     // Only a Chromium-based browser is accepted (see `browser_check`); nothing is run.
     let resolved = crate::browser_check::accept(&resolved)?;
-    prefs::save_chrome_path(&app, &resolved)?;
+    prefs::save_chrome_path(app, &resolved)?;
     *state.chrome_path.lock().expect("chrome_path lock") = Some(resolved.clone());
     *state.chrome_notice.lock().expect("chrome_notice lock") = None;
     Ok(ChromeInfo {
@@ -1101,9 +1181,55 @@ pub fn set_chrome_path(
     })
 }
 
+/// A file or folder the user picked in the backend's dialog: a token for the webview, and the path
+/// for display only (the webview never passes the path back).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PickedPath {
+    pub token: String,
+    pub path: String,
+}
+
+/// The execution trace (`scrapelens.trace/1`) to validate; `None` if cancelled.
+#[tauri::command]
+pub async fn pick_trace_file(app: AppHandle) -> Result<Option<PickedPath>, String> {
+    let Some(path) = pick_path(
+        &app,
+        "Choose the trace of the script run",
+        Pick::OpenFile,
+        Some(("Trace", &["json"][..])),
+        None,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+    let token = grants::issue(grants::Kind::ImportFile, &path)?;
+    Ok(Some(PickedPath { token, path: path.display().to_string() }))
+}
+
+/// The second session to compare (a folder); `None` if cancelled.
+#[tauri::command]
+pub async fn pick_compare_session(app: AppHandle) -> Result<Option<PickedPath>, String> {
+    let Some(path) = pick_path(
+        &app,
+        "Choose the 2nd capture (session B folder)",
+        Pick::Folder,
+        None,
+        None,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+    let token = grants::issue(grants::Kind::Session, &path)?;
+    Ok(Some(PickedPath { token, path: path.display().to_string() }))
+}
+
 /// Reads a text preview of a session attachment (hard limit, never leaves the folder).
 #[tauri::command]
-pub fn read_attachment(session_dir: String, name: String) -> Result<AttachmentPayload, String> {
+pub fn read_attachment(session_token: String, name: String) -> Result<AttachmentPayload, String> {
+    let session_dir = session_dir_for_token(&session_token)?;
     use std::io::Read;
     let (file, total) = open_attachment(&session_dir, &name)?;
     if total > 1024 * 1024 {
@@ -1141,12 +1267,13 @@ fn open_attachment(session_dir: &str, name: &str) -> Result<(fs::File, u64), Str
 /// `max_matches` limits the result; the front end does not reimplement the search.
 #[tauri::command]
 pub async fn search_session(
-    session_dir: String,
+    session_token: String,
     text: String,
     scopes: Vec<String>,
     case_sensitive: bool,
     max_matches: Option<usize>,
 ) -> Result<scrapelens_core::search::SearchResult, String> {
+    let session_dir = session_dir_for_token(&session_token)?;
     tauri::async_runtime::spawn_blocking(move || {
         run_search(&session_dir, &text, &scopes, case_sensitive, max_matches)
     })
@@ -1356,9 +1483,10 @@ fn read_body_blocking(session_dir: &str, name: &str, limit: u64) -> Result<BodyP
 /// Origin of a request's values (`flow::value_origins`), off the UI thread.
 #[tauri::command]
 pub async fn request_origins(
-    session_dir: String,
+    session_token: String,
     request_id: String,
 ) -> Result<scrapelens_core::flow::ValueOrigins, String> {
+    let session_dir = session_dir_for_token(&session_token)?;
     tauri::async_runtime::spawn_blocking(move || {
         let lazy = cached_session(Path::new(&session_dir))?;
         scrapelens_core::flow::value_origins(
@@ -1376,9 +1504,10 @@ pub async fn request_origins(
 /// Priming chain of a request (`flow::priming_chain`).
 #[tauri::command]
 pub async fn request_chain(
-    session_dir: String,
+    session_token: String,
     request_id: String,
 ) -> Result<scrapelens_core::flow::PrimingChain, String> {
+    let session_dir = session_dir_for_token(&session_token)?;
     tauri::async_runtime::spawn_blocking(move || {
         let lazy = cached_session(Path::new(&session_dir))?;
         scrapelens_core::flow::priming_chain(
@@ -1396,10 +1525,11 @@ pub async fn request_chain(
 /// Structured (derived) view of the body fields that a protocol adapter claims.
 #[tauri::command]
 pub async fn adapter_view(
-    session_dir: String,
+    session_token: String,
     request_id: String,
     side: String,
 ) -> Result<crate::adapters::AdapterView, String> {
+    let session_dir = session_dir_for_token(&session_token)?;
     tauri::async_runtime::spawn_blocking(move || {
         let lazy = cached_session(Path::new(&session_dir))?;
         let request = lazy
@@ -1417,8 +1547,9 @@ pub async fn adapter_view(
 /// Application timeline (`timeline::timeline`), with the app's adapter registry.
 #[tauri::command]
 pub async fn session_timeline(
-    session_dir: String,
+    session_token: String,
 ) -> Result<scrapelens_core::timeline::Timeline, String> {
+    let session_dir = session_dir_for_token(&session_token)?;
     tauri::async_runtime::spawn_blocking(move || {
         let dir = Path::new(&session_dir);
         let rules = load_rules(dir)?;
@@ -1441,6 +1572,8 @@ pub async fn session_timeline(
 pub struct ValidationResult {
     /// New folder (0700) with the session imported from the trace; contains execution data.
     pub trace_dir: String,
+    /// Token for `trace_dir`: what discard, keep and sanitize take back.
+    pub trace_token: String,
     pub trace_requests: usize,
     pub validation: scrapelens_core::validate::Validation,
 }
@@ -1455,21 +1588,30 @@ fn validation_root(app: &AppHandle) -> Result<PathBuf, String> {
 
 /// Discards the trace's temporary session (closing the validation screen).
 #[tauri::command]
-pub fn discard_validation(app: AppHandle, trace_dir: String) -> Result<(), String> {
+pub fn discard_validation(app: AppHandle, trace_token: String) -> Result<(), String> {
+    let trace_dir = session_dir_for_token(&trace_token)?;
     crate::validation::discard(&validation_root(&app)?, Path::new(&trace_dir))
 }
 
 /// "Keep this execution": copies the trace's session to a new folder and deletes the temporary one.
 #[tauri::command]
-pub async fn keep_validation(
-    app: AppHandle,
-    trace_dir: String,
-    destination: String,
-) -> Result<String, String> {
+pub async fn keep_validation(app: AppHandle, trace_token: String) -> Result<Option<String>, String> {
+    let trace_dir = session_dir_for_token(&trace_token)?;
+    let Some(destination) = pick_path(
+        &app,
+        "Choose a new folder to keep the run",
+        Pick::SaveFile,
+        None,
+        Some("script-run".to_string()),
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
     let root = validation_root(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
-        crate::validation::keep(&root, Path::new(&trace_dir), Path::new(&destination))
-            .map(|p| p.display().to_string())
+        crate::validation::keep(&root, Path::new(&trace_dir), &destination)
+            .map(|path| Some(path.display().to_string()))
     })
     .await
     .map_err(|error| format!("saving failed: {error}"))?
@@ -1480,10 +1622,12 @@ pub async fn keep_validation(
 #[tauri::command]
 pub async fn validate_execution(
     app: AppHandle,
-    session_dir: String,
-    trace_path: String,
+    session_token: String,
+    trace_token: String,
     map_origin: Option<String>,
 ) -> Result<ValidationResult, String> {
+    let session_dir = session_dir_for_token(&session_token)?;
+    let trace_path = import_path_for_token(&trace_token)?;
     let root = validation_root(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         validate_execution_blocking(
@@ -1544,6 +1688,7 @@ fn validate_execution_blocking(
     );
     Ok(ValidationResult {
         trace_dir: dir.display().to_string(),
+        trace_token: grants::issue(grants::Kind::Session, &dir)?,
         trace_requests: trace.session.requests.len(),
         validation,
     })
@@ -1552,7 +1697,8 @@ fn validate_execution_blocking(
 /// Application success × HTTP (`assess::assess_session`). Optional rules in
 /// `<session>/assess-rules.json`; invalid rules become an actionable error.
 #[tauri::command]
-pub async fn assess_session(session_dir: String) -> Result<serde_json::Value, String> {
+pub async fn assess_session(session_token: String) -> Result<serde_json::Value, String> {
+    let session_dir = session_dir_for_token(&session_token)?;
     tauri::async_runtime::spawn_blocking(move || assess_blocking(Path::new(&session_dir)))
         .await
         .map_err(|error| format!("the assessment was interrupted: {error}"))?
@@ -1734,12 +1880,14 @@ fn pair_is_dynamic(pair: &scrapelens_core::compare::PairComparison) -> bool {
 /// Compares the open session (A) with another folder (B), off the UI thread.
 #[tauri::command]
 pub async fn compare_open(
-    dir_a: String,
-    dir_b: String,
+    token_a: String,
+    token_b: String,
     include_all: Option<bool>,
     a_range: Option<String>,
     b_range: Option<String>,
 ) -> Result<CompareSummary, String> {
+    let dir_a = session_dir_for_token(&token_a)?;
+    let dir_b = session_dir_for_token(&token_b)?;
     tauri::async_runtime::spawn_blocking(move || {
         let options = compare_options(
             include_all.unwrap_or(false),
@@ -2032,12 +2180,13 @@ fn export_preview(
 /// saved file.
 #[tauri::command]
 pub async fn export_request(
-    session_dir: String,
+    session_token: String,
     request_id: String,
     format: String,
     annotate_origins: Option<bool>,
     lenient_parts: Option<bool>,
 ) -> Result<crate::export::ExportPreview, String> {
+    let session_dir = session_dir_for_token(&session_token)?;
     tauri::async_runtime::spawn_blocking(move || {
         export_preview(
             Path::new(&session_dir),
@@ -2109,9 +2258,10 @@ fn finish_save(target: &Path, text: &str) -> Result<SavedExport, String> {
 /// Sanitization counts and warnings, without writing anything.
 #[tauri::command]
 pub async fn preview_sanitized(
-    session_dir: String,
+    session_token: String,
     include_sensitive: Option<bool>,
 ) -> Result<crate::export::SanitizePreview, String> {
+    let session_dir = session_dir_for_token(&session_token)?;
     tauri::async_runtime::spawn_blocking(move || {
         crate::export::sanitize_preview_with_options(
             Path::new(&session_dir),
@@ -2134,21 +2284,32 @@ pub struct SanitizeSavedDto {
 /// Writes the sanitized session to a new folder chosen by the user.
 #[tauri::command]
 pub async fn save_sanitized(
-    session_dir: String,
-    destination: String,
+    app: AppHandle,
+    session_token: String,
+    suggested_name: String,
     include_sensitive: Option<bool>,
-) -> Result<SanitizeSavedDto, String> {
+) -> Result<Option<SanitizeSavedDto>, String> {
+    let session_dir = session_dir_for_token(&session_token)?;
+    let include = include_sensitive.unwrap_or(false);
+    let title = if include {
+        "Export full capture with sensitive data"
+    } else {
+        "Choose a new folder for the sanitized session"
+    };
+    // Only the file name of the suggestion is used, as the dialog's default; never as a target.
+    let default_name = Path::new(&suggested_name)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned());
+    let Some(destination) = pick_path(&app, title, Pick::SaveFile, None, default_name).await? else {
+        return Ok(None);
+    };
     let saved = tauri::async_runtime::spawn_blocking(move || {
-        crate::export::sanitize_to_with_options(
-            Path::new(&session_dir),
-            Path::new(&destination),
-            include_sensitive.unwrap_or(false),
-        )
+        crate::export::sanitize_to_with_options(Path::new(&session_dir), &destination, include)
     })
     .await
     .map_err(|error| format!("sanitization failed: {error}"))??;
     let token = grants::issue(grants::Kind::Session, Path::new(&saved.path))?;
-    Ok(SanitizeSavedDto { saved, token })
+    Ok(Some(SanitizeSavedDto { saved, token }))
 }
 
 /// The path behind a reveal token, when it still exists. A path or another kind of token is
@@ -2487,11 +2648,11 @@ mod tests {
         let dir = temp_session_dir("attachment");
         fs::write(dir.join("attachments/req.bin"), b"hello").unwrap();
         let payload =
-            read_attachment(dir.to_str().unwrap().to_string(), "req.bin".to_string()).unwrap();
+            read_attachment(session_token(&dir), "req.bin".to_string()).unwrap();
         assert_eq!(payload.kind, "text");
         assert_eq!(payload.text.as_deref(), Some("hello"));
         assert!(
-            read_attachment(dir.to_str().unwrap().to_string(), "../escape".to_string()).is_err()
+            read_attachment(session_token(&dir), "../escape".to_string()).is_err()
         );
         fs::remove_dir_all(dir).ok();
     }
@@ -2620,7 +2781,7 @@ mod tests {
         assert!(read_body_blocking(d, "link.bin", 100)
             .unwrap_err()
             .contains("symbolic link"));
-        assert!(read_attachment(d.to_string(), "link.bin".to_string())
+        assert!(read_attachment(session_token(Path::new(d)), "link.bin".to_string())
             .unwrap_err()
             .contains("symbolic link"));
         assert_eq!(read_body_blocking(d, "ok.bin", 100).unwrap().kind, "text");
@@ -3066,7 +3227,7 @@ mod tests {
         let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let capture = real_shape_session("timeline-cap");
         // timeline: application events with the adapter label and collapsed groups
-        let rt = tauri::async_runtime::block_on(session_timeline(capture.display().to_string()))
+        let rt = tauri::async_runtime::block_on(session_timeline(session_token(&capture)))
             .unwrap();
         assert!(rt.counts.events > 0 && rt.counts.protection > 0);
         let json = serde_json::to_value(&rt).unwrap();
@@ -3201,7 +3362,7 @@ mod tests {
         let dir = std::env::var("SL_SESSION").expect("SL_SESSION");
         let out = PathBuf::from(std::env::var("SL_DUMP").expect("SL_DUMP"));
         fs::create_dir_all(&out).unwrap();
-        let t = tauri::async_runtime::block_on(session_timeline(dir.clone())).unwrap();
+        let t = tauri::async_runtime::block_on(session_timeline(session_token(Path::new(&dir)))).unwrap();
         fs::write(
             out.join("timeline.json"),
             serde_json::to_string(&t).unwrap(),
@@ -3582,6 +3743,12 @@ mod cookie_source_tests {
     }
 }
 
+/// A session token for a folder a test created (what the backend issues for a session it opened).
+#[cfg(test)]
+fn session_token(dir: &Path) -> String {
+    grants::issue(grants::Kind::Session, dir).expect("token for the test folder")
+}
+
 /// T17: the webview gets paths back only as tokens the backend issued.
 #[cfg(test)]
 mod grant_tests {
@@ -3639,6 +3806,23 @@ mod grant_tests {
         assert_eq!(reveal_target(&session).unwrap(), dir);
         let saved = finish_save(&file, "x").unwrap();
         assert_eq!(reveal_target(&saved.token).unwrap(), file);
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn import_files_and_sessions_do_not_stand_in_for_each_other() {
+        let dir = scratch("kinds");
+        let file = dir.join("capture.har");
+        fs::write(&file, b"{}").unwrap();
+        let import = grants::issue(grants::Kind::ImportFile, &file).unwrap();
+        let session = session_token(&dir);
+        // A path is refused for an import, and an import token is refused for a session folder.
+        assert!(import_path_for_token(&file.display().to_string()).is_err());
+        assert!(session_dir_for_token(&import).is_err());
+        assert!(import_path_for_token(&session).is_err());
+        // The normal flow: each token gives its own path.
+        assert_eq!(import_path_for_token(&import).unwrap(), file.display().to_string());
+        assert_eq!(session_dir_for_token(&session).unwrap(), dir.display().to_string());
         fs::remove_dir_all(&dir).ok();
     }
 

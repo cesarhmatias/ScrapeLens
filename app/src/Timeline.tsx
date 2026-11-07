@@ -8,12 +8,12 @@ import type { RequestSummary } from "./types";
 import { timelineTargetBadge } from "./target";
 
 export function TimelineView({
-  sessionDir,
+  sessionToken,
   requests,
   onOpenRequest,
   onBack,
 }: {
-  sessionDir?: string;
+  sessionToken?: string;
   /** For the target badge (outside the main page); the timeline core does not send target. */
   requests?: RequestSummary[];
   onOpenRequest: (id: string) => void;
@@ -29,19 +29,19 @@ export function TimelineView({
   useEffect(() => {
     setData(null);
     setError(null);
-    if (!sessionDir) {
+    if (!sessionToken) {
       setError("This session has no persisted folder; the timeline needs the session's files.");
       return;
     }
     let alive = true;
     bridge
-      .sessionTimeline(sessionDir)
+      .sessionTimeline(sessionToken)
       .then((t) => alive && setData(t))
       .catch((e) => alive && setError(String(e)));
     return () => {
       alive = false;
     };
-  }, [sessionDir]);
+  }, [sessionToken]);
 
   let round = 0;
   return (
@@ -176,7 +176,7 @@ export function ValidationView({
   const keep = async () => {
     setKeepError(null);
     try {
-      const path = await bridge.keepValidation(result.traceDir);
+      const path = await bridge.keepValidation(result.traceToken);
       if (path) {
         setKept(path);
         onKept(path);

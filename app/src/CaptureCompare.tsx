@@ -156,21 +156,21 @@ function PairBlock({ handle, pair, onlyDynamic, outA, outB }: { handle: number; 
 
 export function CaptureCompareView({
   summary: initial,
-  dirA,
-  dirB,
+  tokenA,
+  tokenB,
   labelA,
   labelB,
   onBack,
 }: {
   summary: CompareSummary;
-  dirA: string;
-  dirB: string;
+  tokenA: string;
+  tokenB: string;
   labelA: string;
   labelB: string;
   onBack: () => void;
 }) {
-  const assessA = useAssess(dirA);
-  const assessB = useAssess(dirB);
+  const assessA = useAssess(tokenA);
+  const assessB = useAssess(tokenB);
   const [summary, setSummary] = useState(initial);
   const [includeAll, setIncludeAll] = useState(initial.includeAll ?? false);
   const [aRange, setARange] = useState("");
@@ -186,7 +186,7 @@ export function CaptureCompareView({
     setRecomputing(true);
     setOptionError(null);
     try {
-      const next = await bridge.compareOpen(dirA, dirB, { includeAll, aRange, bRange });
+      const next = await bridge.compareOpen(tokenA, tokenB, { includeAll, aRange, bRange });
       setSummary(next);
       setOffset(0);
       setOnlyDynamic(next.pairs > DYNAMIC_ONLY_THRESHOLD);

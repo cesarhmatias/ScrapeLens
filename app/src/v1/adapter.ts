@@ -720,7 +720,7 @@ export function summaryOfRecord(r: RequestRecord): RequestSummary {
 export function adaptRequestDetail(
   header: SessionV1,
   detail: RawRequestDetail,
-  options: { attachments?: Record<string, string>; sourcePath?: string } = {},
+  options: { attachments?: Record<string, string>; sourceToken?: string } = {},
 ): RequestRecord {
   const mini: SessionV1 = {
     schemaVersion: header.schemaVersion,

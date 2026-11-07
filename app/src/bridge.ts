@@ -13,12 +13,10 @@ export interface CookieSourcesPayload { sources: CookieSourceDto[]; selected: st
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import type { RawRequestDetail, RawRequestSummary, SessionV1, TargetProvenance } from "./v1/types";
 import type { AssessResult, VerdictKind } from "./assess";
 import type { ComparePage, CompareSummary, FieldDiff, PrimingChain, ValueOrigins } from "./flow";
 import type { CookieImportReport } from "./cookieImport";
-import { chromePickerOptions } from "./listView";
 import type { ProxyInfo, ProxyState } from "./proxyRules";
 
 export interface SessionPayload {
@@ -150,6 +148,8 @@ export interface StepValidationDto {
 }
 export interface ValidationResultDto {
   traceDir: string;
+  /** Token for `traceDir`: what discard, keep and sanitize take back. */
+  traceToken: string;
   traceRequests: number;
   validation: {
     schema: string;
@@ -176,6 +176,12 @@ export interface AdapterViewDto {
     omittedParts?: number;
   }[];
   note?: string | null;
+}
+
+/** A file or folder picked in the backend: the token to pass back, and the path for display only. */
+export interface PickedPath {
+  token: string;
+  path: string;
 }
 
 export interface SavedFile {
@@ -309,26 +315,16 @@ export const bridge = {
     return invoke("open_session");
   },
 
+  /** Opens the HAR dialog in the backend and imports the file; `null` if cancelled. */
   async importHar(): Promise<SessionPayload | null> {
     if (!isTauri()) return null;
-    const picked = await openDialog({
-      title: "Import HAR",
-      multiple: false,
-      filters: [{ name: "HAR", extensions: ["har", "json"] }],
-    });
-    if (!picked) return null;
-    return invoke("import_har", { path: picked });
+    return invoke("import_har");
   },
 
+  /** Opens the NetLog dialog in the backend and imports the file; `null` if cancelled. */
   async importNetlog(): Promise<SessionPayload | null> {
     if (!isTauri()) return null;
-    const picked = await openDialog({
-      title: "Import NetLog",
-      multiple: false,
-      filters: [{ name: "NetLog", extensions: ["json"] }],
-    });
-    if (!picked) return null;
-    return invoke("import_netlog", { path: picked });
+    return invoke("import_netlog");
   },
 
   async startSession(startUrl?: string, cookieSource?: string): Promise<SessionPayload | null> {
@@ -379,13 +375,13 @@ export const bridge = {
   },
 
   /** Page of summaries (P5); filters run in the backend. */
-  async listRequests(sessionDir: string, offset: number, limit: number, filter: ListFilter): Promise<RequestPageDto> {
-    return invoke("list_requests", { sessionDir, offset, limit, filter });
+  async listRequests(sessionToken: string, offset: number, limit: number, filter: ListFilter): Promise<RequestPageDto> {
+    return invoke("list_requests", { sessionToken, offset, limit, filter });
   },
 
   /** Detail of one request, on demand (P5). */
-  async getRequest(sessionDir: string, id: string): Promise<RawRequestDetail> {
-    return invoke("get_request", { sessionDir, id });
+  async getRequest(sessionToken: string, id: string): Promise<RawRequestDetail> {
+    return invoke("get_request", { sessionToken, id });
   },
 
   /** Consumes `--import-har` / `--import-netlog` / `--open-capture` (once). */
@@ -394,12 +390,14 @@ export const bridge = {
     return invoke("take_cli_action");
   },
 
-  async importHarAt(path: string): Promise<SessionPayload> {
-    return invoke("import_har", { path });
+  /** Imports a HAR the backend issued a token for (the CLI open path). */
+  async importHarAt(token: string): Promise<SessionPayload | null> {
+    return invoke("import_har", { token });
   },
 
-  async importNetlogAt(path: string): Promise<SessionPayload> {
-    return invoke("import_netlog", { path });
+  /** Imports a NetLog the backend issued a token for (the CLI open path). */
+  async importNetlogAt(token: string): Promise<SessionPayload | null> {
+    return invoke("import_netlog", { token });
   },
 
   async captureStatus(): Promise<CaptureStatus | null> {
@@ -413,15 +411,10 @@ export const bridge = {
   },
 
   /** Manual selection of Chrome when detection does not find it. */
+  /** Opens the Chrome dialog in the backend, validates the browser and saves it; `null` if cancelled. */
   async chooseChrome(): Promise<ChromeInfo | null> {
     if (!isTauri()) return null;
-    const picked = await openDialog({
-      title: "Select Google Chrome",
-      ...chromePickerOptions(),
-      multiple: false,
-    });
-    if (!picked) return null;
-    return invoke("set_chrome_path", { path: picked });
+    return invoke("choose_chrome");
   },
 
   /** Shows a folder or file the backend issued a token for (see `grants`). */
@@ -430,18 +423,18 @@ export const bridge = {
     await invoke("reveal_path", { token });
   },
 
-  async readAttachment(sessionDir: string, name: string): Promise<{ kind: "text" | "binary"; text?: string; bytes: number }> {
-    return invoke("read_attachment", { sessionDir, name });
+  async readAttachment(sessionToken: string, name: string): Promise<{ kind: "text" | "binary"; text?: string; bytes: number }> {
+    return invoke("read_attachment", { sessionToken, name });
   },
 
   async searchSession(
-    sessionDir: string,
+    sessionToken: string,
     text: string,
     scopes: SearchScope[],
     caseSensitive: boolean,
     maxMatches = 2000,
   ): Promise<SearchResultDto> {
-    return invoke("search_session", { sessionDir, text, scopes, caseSensitive, maxMatches });
+    return invoke("search_session", { sessionToken, text, scopes, caseSensitive, maxMatches });
   },
 
   /** Reads an attached body (text, or size + hex preview if binary). */
@@ -459,90 +452,72 @@ export const bridge = {
    * is exactly what the UI shows, copies and saves — nothing is executed.
    */
   async exportRequest(
-    sessionDir: string,
+    sessionToken: string,
     requestId: string,
     format: "curl" | "python" | "priming",
     annotateOrigins = false,
     lenientParts = false,
   ): Promise<ExportPreview> {
-    return invoke("export_request", { sessionDir, requestId, format, annotateOrigins, lenientParts });
+    return invoke("export_request", { sessionToken, requestId, format, annotateOrigins, lenientParts });
   },
 
-  async requestOrigins(sessionDir: string, requestId: string): Promise<ValueOrigins> {
-    return invoke("request_origins", { sessionDir, requestId });
+  async requestOrigins(sessionToken: string, requestId: string): Promise<ValueOrigins> {
+    return invoke("request_origins", { sessionToken, requestId });
   },
 
-  async adapterView(sessionDir: string, requestId: string, side: "request" | "response"): Promise<AdapterViewDto> {
-    return invoke("adapter_view", { sessionDir, requestId, side });
+  async adapterView(sessionToken: string, requestId: string, side: "request" | "response"): Promise<AdapterViewDto> {
+    return invoke("adapter_view", { sessionToken, requestId, side });
   },
 
-  async sessionTimeline(sessionDir: string): Promise<TimelineDto> {
-    return invoke("session_timeline", { sessionDir });
+  async sessionTimeline(sessionToken: string): Promise<TimelineDto> {
+    return invoke("session_timeline", { sessionToken });
   },
 
-  /** Native picker for the trace file (`--trace` of the priming script); `null` if cancelled. */
-  async pickTraceFile(): Promise<string | null> {
+  /** The trace file (`--trace` of the priming script), picked in the backend; `null` if cancelled. */
+  async pickTraceFile(): Promise<PickedPath | null> {
     if (!isTauri()) return null;
-    const picked = await openDialog({
-      title: "Choose the trace of the script run",
-      message: "JSON file generated by the priming script with --trace (scrapelens.trace/1).",
-      multiple: false,
-      filters: [{ name: "Trace", extensions: ["json"] }],
-    });
-    return typeof picked === "string" ? picked : null;
+    return invoke("pick_trace_file");
   },
 
-  async validateExecution(sessionDir: string, tracePath: string, mapOrigin?: string): Promise<ValidationResultDto> {
-    return invoke("validate_execution", { sessionDir, tracePath, mapOrigin: mapOrigin || null });
+  async validateExecution(sessionToken: string, traceToken: string, mapOrigin?: string): Promise<ValidationResultDto> {
+    return invoke("validate_execution", { sessionToken, traceToken, mapOrigin: mapOrigin || null });
   },
 
   /** Deletes the trace's temporary session (when closing the validation screen). */
-  async discardValidation(traceDir: string): Promise<void> {
+  async discardValidation(traceToken: string): Promise<void> {
     if (!isTauri()) return;
-    return invoke("discard_validation", { traceDir });
+    return invoke("discard_validation", { traceToken });
   },
 
-  /** "Keep this run": picks a new folder and moves the trace session there; `null` if cancelled. */
-  async keepValidation(traceDir: string): Promise<string | null> {
+  /** "Keep this run": the backend asks for a new folder and moves the trace session there; `null` if cancelled. */
+  async keepValidation(traceToken: string): Promise<string | null> {
     if (!isTauri()) return null;
-    const picked = await saveDialog({
-      title: "Choose a new folder to keep the run",
-      defaultPath: "script-run",
-      canCreateDirectories: true,
-    });
-    if (!picked) return null;
-    return invoke("keep_validation", { traceDir, destination: picked });
+    return invoke("keep_validation", { traceToken });
   },
 
-  async assessSession(sessionDir: string): Promise<AssessResult> {
-    return invoke("assess_session", { sessionDir });
+  async assessSession(sessionToken: string): Promise<AssessResult> {
+    return invoke("assess_session", { sessionToken });
   },
 
-  async requestChain(sessionDir: string, requestId: string): Promise<PrimingChain> {
-    return invoke("request_chain", { sessionDir, requestId });
+  async requestChain(sessionToken: string, requestId: string): Promise<PrimingChain> {
+    return invoke("request_chain", { sessionToken, requestId });
   },
 
-  /** Native folder picker for the 2nd capture; `null` if the user cancels. */
-  async pickCompareSession(): Promise<string | null> {
+  /** The 2nd capture (a session folder), picked in the backend; `null` if the user cancels. */
+  async pickCompareSession(): Promise<PickedPath | null> {
     if (!isTauri()) return null;
-    const picked = await openDialog({
-      title: "Choose the 2nd capture (session B folder)",
-      message: "Choose the folder of a ScrapeLens session to compare with the open one.",
-      directory: true,
-      multiple: false,
-    });
-    return typeof picked === "string" ? picked : null;
+    return invoke("pick_compare_session");
   },
 
   /** Compares A × B in Rust and returns only the summary; pairs and fields come per page. */
   async compareOpen(
-    dirA: string,
-    dirB: string,
+    tokenA: string,
+    tokenB: string,
     options: { includeAll?: boolean; aRange?: string; bRange?: string } = {},
   ): Promise<CompareSummary> {
     return invoke("compare_open", {
-      dirA,
-      dirB,
+      tokenA,
+      tokenB,
       includeAll: options.includeAll ?? false,
       aRange: options.aRange || null,
       bRange: options.bRange || null,
@@ -565,23 +540,18 @@ export const bridge = {
   },
 
   /** Sanitization counts/warnings; writes nothing. */
-  async previewSanitized(sessionDir: string, includeSensitive = false): Promise<SanitizePreview> {
-    return invoke("preview_sanitized", { sessionDir, includeSensitive });
+  async previewSanitized(sessionToken: string, includeSensitive = false): Promise<SanitizePreview> {
+    return invoke("preview_sanitized", { sessionToken, includeSensitive });
   },
 
   /**
    * Native dialog to choose a new folder and write the sanitized session.
    * Cancelling the dialog returns `null` without touching the source.
    */
-  async saveSanitized(sessionDir: string, suggestedDestination: string, includeSensitive = false): Promise<SanitizeSaved | null> {
+  /** The backend asks for the destination folder; `null` if cancelled. The suggestion is only a name. */
+  async saveSanitized(sessionToken: string, suggestedName: string, includeSensitive = false): Promise<SanitizeSaved | null> {
     if (!isTauri()) return null;
-    const picked = await saveDialog({
-      title: includeSensitive ? "Export full capture with sensitive data" : "Choose a new folder for the sanitized session",
-      defaultPath: suggestedDestination,
-      canCreateDirectories: true,
-    });
-    if (!picked) return null;
-    return invoke("save_sanitized", { sessionDir, destination: picked, includeSensitive });
+    return invoke("save_sanitized", { sessionToken, suggestedName, includeSensitive });
   },
 
   async copyText(text: string): Promise<boolean> {

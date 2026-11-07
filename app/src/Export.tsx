@@ -122,7 +122,7 @@ export function ExportDialog({
   request: RequestRecord;
   onClose: () => void;
 }) {
-  const sessionDir = session.sourcePath;
+  const sessionToken = session.sourceToken;
   const [format, setFormat] = useState<"curl" | "python" | "priming">("curl");
   const [annotate, setAnnotate] = useState(false);
   const [lenient, setLenient] = useState(false);
@@ -136,7 +136,7 @@ export function ExportDialog({
   const proxyNotice = scriptProxyNotice(session.capture?.proxy);
 
   useEffect(() => {
-    if (!sessionDir) {
+    if (!sessionToken) {
       setError("This session has no persisted folder; open a capture or import a file to export.");
       return;
     }
@@ -147,7 +147,7 @@ export function ExportDialog({
     setSaved(null);
     setPreview(null);
     bridge
-      .exportRequest(sessionDir, request.id, format, annotate, format === "priming" && lenient)
+      .exportRequest(sessionToken, request.id, format, annotate, format === "priming" && lenient)
       .then((result) => {
         if (!alive) return;
         if (result.requestId !== request.id) {
@@ -165,7 +165,7 @@ export function ExportDialog({
     return () => {
       alive = false;
     };
-  }, [format, annotate, lenient, request.id, sessionDir]);
+  }, [format, annotate, lenient, request.id, sessionToken]);
 
   const copy = useCallback(async () => {
     if (!preview) return;
@@ -333,7 +333,7 @@ export function ExportDialog({
         </>
       )}
 
-      {!sessionDir && !error && <p className="export-hint">Session without persisted folder.</p>}
+      {!sessionToken && !error && <p className="export-hint">Session without persisted folder.</p>}
     </Modal>
   );
 }
@@ -347,7 +347,7 @@ export function SanitizeDialog({
   onClose: () => void;
   onOpened: (payload: Awaited<ReturnType<typeof bridge.openSessionAt>>) => void;
 }) {
-  const sessionDir = session.sourcePath;
+  const sessionToken = session.sourceToken;
   const [includeSensitive, setIncludeSensitive] = useState(false);
   const [destination, setDestination] = useState("");
   const previousSuggestion = useRef("");
@@ -359,7 +359,7 @@ export function SanitizeDialog({
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!sessionDir) {
+    if (!sessionToken) {
       setError("This session has no persisted folder; sanitizing requires the session's files.");
       return;
     }
@@ -367,7 +367,7 @@ export function SanitizeDialog({
     setLoading(true);
     setError(null);
     bridge
-      .previewSanitized(sessionDir, includeSensitive)
+      .previewSanitized(sessionToken, includeSensitive)
       .then((result) => {
         if (alive) {
           const previous = previousSuggestion.current;
@@ -385,15 +385,15 @@ export function SanitizeDialog({
     return () => {
       alive = false;
     };
-  }, [sessionDir, includeSensitive]);
+  }, [sessionToken, includeSensitive]);
 
   const save = useCallback(async () => {
-    if (!sessionDir || !preview || loading || !!preview.includeSensitive !== includeSensitive || !destination.trim()) return;
+    if (!sessionToken || !preview || loading || !!preview.includeSensitive !== includeSensitive || !destination.trim()) return;
     setSaving(true);
     setError(null);
     setStatus(null);
     try {
-      const result = await bridge.saveSanitized(sessionDir, destination.trim(), includeSensitive);
+      const result = await bridge.saveSanitized(sessionToken, destination.trim(), includeSensitive);
       if (!result) {
         setStatus("Save cancelled; the original session was not changed.");
         return;
@@ -405,7 +405,7 @@ export function SanitizeDialog({
     } finally {
       setSaving(false);
     }
-  }, [preview, sessionDir, destination, includeSensitive, loading]);
+  }, [preview, sessionToken, destination, includeSensitive, loading]);
 
   const open = useCallback(async () => {
     if (!saved) return;

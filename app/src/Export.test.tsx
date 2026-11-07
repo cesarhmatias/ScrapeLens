@@ -21,20 +21,20 @@ bridge.saveSanitized = async (dir, destination, sensitive) => {
   return null;
 };
 let renderer: ReactTestRenderer;
-await act(async () => { renderer = create(<SanitizeDialog session={{ id: "fixture", sourcePath: "/capture" } as SessionRecord}
+await act(async () => { renderer = create(<SanitizeDialog session={{ id: "fixture", sourcePath: "/capture", sourceToken: "tok-capture" } as SessionRecord}
   onClose={() => {}} onOpened={() => {}} />); });
 const root = renderer!.root;
 const checkbox = () => root.findByProps({ "data-testid": "sanitize-include-sensitive" });
 const destination = () => root.findByProps({ "aria-label": "Export destination" });
 assert.equal(checkbox().props.checked, false);
-assert.deepEqual(calls[0], ["preview", "/capture", false]);
+assert.deepEqual(calls[0], ["preview", "tok-capture", false]);
 await act(async () => { checkbox().props.onChange({ target: { checked: true } }); });
-assert.deepEqual(calls.at(-1), ["preview", "/capture", true]);
+assert.deepEqual(calls.at(-1), ["preview", "tok-capture", true]);
 assert.equal(destination().props.value, "/out/full");
 assert.equal(root.findByProps({ role: "alert" }).props.className, "export-warning");
 const confirm = root.findAllByType("button").find(b => b.props.children === "Export full capture")!;
 await act(async () => { await confirm.props.onClick(); });
-assert.deepEqual(calls.at(-1), ["save", "/capture", "/out/full", true]);
+assert.deepEqual(calls.at(-1), ["save", "tok-capture", "/out/full", true]);
 await act(async () => { checkbox().props.onChange({ target: { checked: false } }); });
 assert.equal(destination().props.value, "/out/sanitized");
 await act(async () => { destination().props.onChange({ target: { value: "/custom/destination" } }); });

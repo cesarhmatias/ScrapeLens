@@ -1176,7 +1176,7 @@ function DetailView({
           {tab === "payload" && (
             <>
               <BodyPanel title="Request payload" body={effectivePayload} kind="payload" onCopy={onCopy} sessionToken={session.sourceToken} matches={bodyMatches("requestBody", effectivePayload)} highlightNeedle={needle} />
-              <AdapterViewPanel sessionDir={session.sourcePath} requestId={req.id} side="request" />
+              <AdapterViewPanel sessionToken={session.sourceToken} requestId={req.id} side="request" />
               <BodyContext req={req} />
               <BodyPanel title="Response body (reference)" body={effectiveResponse} kind="response" onCopy={onCopy} sessionToken={session.sourceToken} matches={bodyMatches("responseBody", effectiveResponse)} highlightNeedle={needle} />
             </>
@@ -1184,7 +1184,7 @@ function DetailView({
           {tab === "response" && (
             <>
               <BodyPanel title="Response body" body={effectiveResponse} kind="response" onCopy={onCopy} sessionToken={session.sourceToken} matches={bodyMatches("responseBody", effectiveResponse)} highlightNeedle={needle} />
-              <AdapterViewPanel sessionDir={session.sourcePath} requestId={req.id} side="response" />
+              <AdapterViewPanel sessionToken={session.sourceToken} requestId={req.id} side="response" />
               <BodyContext req={req} />
             </>
           )}
@@ -1285,7 +1285,7 @@ function DetailView({
           )}
 
           {tab === "origins" && (
-            <OriginsTab sessionDir={session.sourcePath} requestId={req.id} onOpen={onOpenRequest} verdicts={outcomes} />
+            <OriginsTab sessionToken={session.sourceToken} requestId={req.id} onOpen={onOpenRequest} verdicts={outcomes} />
           )}
 
           {tab === "event" && (
@@ -1669,11 +1669,11 @@ export default function App() {
   const [busy, setBusy] = useState<string | null>(null);
   const [exportTarget, setExportTarget] = useState<RequestRecord | null>(null);
   const [sanitizeOpen, setSanitizeOpen] = useState(false);
-  const [sanitizeTraceDir, setSanitizeTraceDir] = useState<string | null>(null);
-  const [validation, setValidation] = useState<{ result: ValidationResultDto; tracePath: string; kept?: boolean } | null>(null);
+  const [sanitizeTrace, setSanitizeTrace] = useState<{ path: string; token: string } | null>(null);
+  const [validation, setValidation] = useState<{ result: ValidationResultDto; tracePath: string; traceToken: string; kept?: boolean } | null>(null);
   const [chrome, setChrome] = useState<ChromeInfo | null>(null);
   const [isLargeDemo, setIsLargeDemo] = useState(false);
-  const [captureCmp, setCaptureCmp] = useState<{ summary: CompareSummary; dirA: string; dirB: string; labelA: string; labelB: string } | null>(null);
+  const [captureCmp, setCaptureCmp] = useState<{ summary: CompareSummary; tokenA: string; tokenB: string; labelA: string; labelB: string } | null>(null);
   const [scopes, setScopes] = useState<SearchScope[]>(ALL_SCOPES);
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [searchState, setSearchState] = useState<{
@@ -1689,31 +1689,31 @@ export default function App() {
   const desktop = isTauri();
   // P5: paged session → summaries via list_requests and detail via get_request;
   // in-memory session (demo, browser mode) → the same summaries, derived locally.
-  const pagedDir = session.paged && session.sourcePath ? session.sourcePath : undefined;
+  const pagedToken = session.paged && session.sourceToken ? session.sourceToken : undefined;
   const memorySummaries = useMemo(() => session.requests.map(summaryOfRecord), [session.requests]);
   const [remoteAll, setRemoteAll] = useState<{ dir: string; items: RequestSummary[]; first?: RequestPageDto } | null>(null);
   // The whole list is only scanned when a view needs it (detail, timeline, comparison);
   // the main view uses `PagedList` (visible pages + 1) and the backend counts.
-  const needFull = Boolean(pagedDir) && (view === "detail" || view === "timeline" || view === "compare");
+  const needFull = Boolean(pagedToken) && (view === "detail" || view === "timeline" || view === "compare");
   useEffect(() => {
-    if (!pagedDir) {
+    if (!pagedToken) {
       setRemoteAll(null);
       return;
     }
-    if (!needFull || remoteAll?.dir === pagedDir) return;
+    if (!needFull || remoteAll?.dir === pagedToken) return;
     let alive = true;
     void (async () => {
       const items: RequestSummary[] = [];
       let first: RequestPageDto | undefined;
       try {
         for (let offset = 0; ; offset += PAGE) {
-          const page = await bridge.listRequests(pagedDir, offset, PAGE, {});
+          const page = await bridge.listRequests(pagedToken, offset, PAGE, {});
           if (!alive) return;
           first = first ?? page;
           for (const raw of page.items) items.push(summaryFromRaw(raw, session.createdAt, page.targets));
           if (page.items.length === 0 || offset + PAGE >= page.matched) break;
         }
-        if (alive) setRemoteAll({ dir: pagedDir, items, first });
+        if (alive) setRemoteAll({ dir: pagedToken, items, first });
       } catch (error) {
         if (alive) setNotice({ kind: "error", text: "Could not list the requests.", detail: String(error) });
       }
@@ -1722,63 +1722,69 @@ export default function App() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pagedDir, session.createdAt, needFull]);
-  const requests: RequestSummary[] = pagedDir
-    ? remoteAll?.dir === pagedDir
+  }, [pagedToken, session.createdAt, needFull]);
+  const requests: RequestSummary[] = pagedToken
+    ? remoteAll?.dir === pagedToken
       ? remoteAll.items
       : []
     : memorySummaries;
   const requestCount = session.requestCount;
   const effectiveId =
-    pagedDir && selectedId && !remoteAll
+    pagedToken && selectedId && !remoteAll
       ? selectedId
       : requests.some((r) => r.id === selectedId)
         ? selectedId
         : requests[0]?.id ?? "";
   const resolveRecord = useCallback(
     async (id: string): Promise<RequestRecord> => {
-      if (!pagedDir) {
+      if (!pagedToken) {
         const found = session.requests.find((r) => r.id === id);
         if (!found) throw new Error(`request ${id} not found`);
         return found;
       }
-      const detail = await bridge.getRequest(pagedDir, id);
-      return adaptRequestDetail(loaded.raw, detail, { sourcePath: pagedDir, attachments: session.attachments });
+      const detail = await bridge.getRequest(pagedToken, id);
+      return adaptRequestDetail(loaded.raw, detail, { sourceToken: pagedToken, attachments: session.attachments });
     },
-    [pagedDir, session.requests, session.attachments, loaded.raw],
+    [pagedToken, session.requests, session.attachments, loaded.raw],
   );
   const [remoteDetail, setRemoteDetail] = useState<{ dir: string; id: string; record?: RequestRecord; error?: string } | null>(null);
   useEffect(() => {
-    if (!pagedDir || !effectiveId) return;
+    if (!pagedToken || !effectiveId) return;
     let alive = true;
     resolveRecord(effectiveId)
-      .then((record) => alive && setRemoteDetail({ dir: pagedDir, id: effectiveId, record }))
-      .catch((error) => alive && setRemoteDetail({ dir: pagedDir, id: effectiveId, error: String(error) }));
+      .then((record) => alive && setRemoteDetail({ dir: pagedToken, id: effectiveId, record }))
+      .catch((error) => alive && setRemoteDetail({ dir: pagedToken, id: effectiveId, error: String(error) }));
     return () => {
       alive = false;
     };
-  }, [pagedDir, effectiveId, resolveRecord]);
-  const selected: RequestRecord | undefined = pagedDir
-    ? remoteDetail?.dir === pagedDir && remoteDetail.id === effectiveId
+  }, [pagedToken, effectiveId, resolveRecord]);
+  const selected: RequestRecord | undefined = pagedToken
+    ? remoteDetail?.dir === pagedToken && remoteDetail.id === effectiveId
       ? remoteDetail.record
       : undefined
     : session.requests.find((r) => r.id === selectedId) ?? session.requests[0];
-  const detailPending = Boolean(pagedDir && effectiveId && !selected);
+  const detailPending = Boolean(pagedToken && effectiveId && !selected);
   const limitsRequests = requests;
   const [listMeta, setListMeta] = useState<RequestPageDto | undefined>(undefined);
   const warningTotal =
     session.warnings.length +
-    (pagedDir
+    (pagedToken
       ? listMeta?.warningTotal ?? 0
       : requests.reduce((total, request) => total + request.warningCount, 0));
   const compareCaptures = async () => {
-    if (!session.sourcePath) return;
+    if (!session.sourceToken) return;
     try {
-      const dirB = await bridge.pickCompareSession();
-      if (!dirB) return;
+      const picked = await bridge.pickCompareSession();
+      if (!picked) return;
       setBusy("Comparing captures…");
-      const summary = await bridge.compareOpen(session.sourcePath, dirB);
-      setCaptureCmp({ summary, dirA: session.sourcePath, dirB, labelA: session.label, labelB: dirB.split("/").filter(Boolean).pop() ?? dirB });
+      const summary = await bridge.compareOpen(session.sourceToken, picked.token);
+      setCaptureCmp({
+        summary,
+        tokenA: session.sourceToken,
+        tokenB: picked.token,
+        labelA: session.label,
+        labelB: picked.path.split("/").filter(Boolean).pop() ?? picked.path,
+      });
       setView("capture-compare");
     } catch (error) {
       setNotice({ kind: "error", text: "Could not compare the captures.", detail: String(error) });
@@ -1849,30 +1855,35 @@ export default function App() {
   const closeValidation = useCallback(() => {
     const current = validationRef.current;
     setView("session");
-    setSanitizeTraceDir(null);
+    setSanitizeTrace(null);
     if (current) {
-      if (!current.kept) void bridge.discardValidation(current.result.traceDir).catch(() => {});
+      if (!current.kept) void bridge.discardValidation(current.result.traceToken).catch(() => {});
       setValidation(null);
     }
   }, []);
 
-  const validateExecution = useCallback(async (again?: { tracePath: string; mapOrigin: string }) => {
-    if (!desktop || !loaded.session.sourcePath) return;
-    const dir = loaded.session.sourcePath;
-    try {
-      const tracePath = again?.tracePath ?? (await bridge.pickTraceFile());
-      if (!tracePath) return;
-      setBusy("Importing the trace and validating…");
-      const result = await bridge.validateExecution(dir, tracePath, again?.mapOrigin);
-      if (validationRef.current && !validationRef.current.kept) void bridge.discardValidation(validationRef.current.result.traceDir).catch(() => {});
-      setValidation({ result, tracePath });
-      setView("validate");
-    } catch (error) {
-      setNotice({ kind: "error", text: "Could not validate the execution.", detail: String(error) });
-    } finally {
-      setBusy(null);
-    }
-  }, [desktop, loaded.session.sourcePath]);
+  const validateExecution = useCallback(
+    async (again?: { traceToken: string; tracePath: string; mapOrigin: string }) => {
+      const sessionToken = loaded.session.sourceToken;
+      if (!desktop || !sessionToken) return;
+      try {
+        const picked = again ? { token: again.traceToken, path: again.tracePath } : await bridge.pickTraceFile();
+        if (!picked) return;
+        setBusy("Importing the trace and validating…");
+        const result = await bridge.validateExecution(sessionToken, picked.token, again?.mapOrigin);
+        if (validationRef.current && !validationRef.current.kept) {
+          void bridge.discardValidation(validationRef.current.result.traceToken).catch(() => {});
+        }
+        setValidation({ result, tracePath: picked.path, traceToken: picked.token });
+        setView("validate");
+      } catch (error) {
+        setNotice({ kind: "error", text: "Could not validate the execution.", detail: String(error) });
+      } finally {
+        setBusy(null);
+      }
+    },
+    [desktop, loaded.session.sourceToken],
+  );
 
   const importCapture = useCallback(
     async (kind: "har" | "netlog") => {
@@ -2056,9 +2067,9 @@ export default function App() {
         );
         const payload =
           action.kind === "import-har"
-            ? await bridge.importHarAt(action.path)
+            ? await bridge.importHarAt(action.token ?? "")
             : action.kind === "import-netlog"
-              ? await bridge.importNetlogAt(action.path)
+              ? await bridge.importNetlogAt(action.token ?? "")
               : await bridge.openSessionAt(action.token ?? "");
         if (!cancelled) applyPayload(payload);
       } catch (error) {
@@ -2178,13 +2189,13 @@ export default function App() {
     return () => window.clearInterval(interval);
   }, [recording?.sessionId, desktop]);
 
-  const searchDir = desktop ? session.sourcePath : undefined;
-  const assess = useAssess(searchDir);
+  const searchToken = desktop ? session.sourceToken : undefined;
+  const assess = useAssess(searchToken);
   const outcomes = assess.map;
   const searchText = query.trim();
-  const searchKey = searchDir && searchText ? JSON.stringify([searchDir, searchText, scopes, caseSensitive]) : "";
+  const searchKey = searchToken && searchText ? JSON.stringify([searchToken, searchText, scopes, caseSensitive]) : "";
   useEffect(() => {
-    if (!searchKey || !searchDir) {
+    if (!searchKey || !searchToken) {
       setSearchState(null);
       return;
     }
@@ -2192,7 +2203,7 @@ export default function App() {
     let alive = true;
     const timer = window.setTimeout(() => {
       bridge
-        .searchSession(searchDir, searchText, scopes, caseSensitive)
+        .searchSession(searchToken, searchText, scopes, caseSensitive)
         .then((result) => alive && setSearchState({ key: searchKey, loading: false, result }))
         .catch((error) => alive && setSearchState({ key: searchKey, loading: false, error: String(error) }));
     }, 250);
@@ -2200,7 +2211,7 @@ export default function App() {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [searchKey, searchDir, searchText, scopes, caseSensitive]);
+  }, [searchKey, searchToken, searchText, scopes, caseSensitive]);
   const searchResult = searchState?.key === searchKey ? searchState.result : undefined;
   const matchesById = useMemo(() => {
     const map = new Map<string, SearchMatch[]>();
@@ -2215,14 +2226,14 @@ export default function App() {
 
   const showTargetColumn = useMemo(
     () =>
-      pagedDir
+      pagedToken
         ? Boolean(listMeta?.hasTargets) || sessionShowsTargets([], session.warnings)
         : sessionShowsTargets(requests, session.warnings),
-    [pagedDir, listMeta, requests, session.warnings],
+    [pagedToken, listMeta, requests, session.warnings],
   );
 
   const localFiltered = useMemo(() => {
-    if (pagedDir) return [];
+    if (pagedToken) return [];
     const q = query.trim().toLowerCase();
     return requests.filter((r) => {
       if (typeFilter === "fetch" && !(r.type === "fetch" || r.type === "xhr")) return false;
@@ -2253,7 +2264,7 @@ export default function App() {
       );
     });
   }, [
-    pagedDir,
+    pagedToken,
     requests,
     query,
     typeFilter,
@@ -2285,18 +2296,18 @@ export default function App() {
       restrictIds: restrict,
     };
   }, [typeFilter, protocol, targetFilter, query, payloadSearch, matchesById, failFilter, blockFilter, outcomes]);
-  const remoteKey = pagedDir ? `${pagedDir}\u0000${JSON.stringify(remoteFilter)}` : "";
+  const remoteKey = pagedToken ? `${pagedToken}\u0000${JSON.stringify(remoteFilter)}` : "";
   const remoteFilterRef = useRef(remoteFilter);
   remoteFilterRef.current = remoteFilter;
   const [, bumpList] = useReducer((n: number) => n + 1, 0);
   // One `PagedList` per (session, filter): replaced only when the key changes, not on every render.
   const pagedList = useMemo(() => {
-    if (!pagedDir) return null;
+    if (!pagedToken) return null;
     const filter = remoteFilterRef.current;
     const createdAt = session.createdAt;
     return new PagedList<RequestSummary, RequestPageDto>(
       async (offset, limit) => {
-        const page = await bridge.listRequests(pagedDir, offset, limit, filter);
+        const page = await bridge.listRequests(pagedToken, offset, limit, filter);
         return { meta: page, rows: page.items.map((raw) => summaryFromRaw(raw, createdAt, page.targets)) };
       },
       PAGE,
@@ -2312,13 +2323,13 @@ export default function App() {
     if (pagedList?.error) setNotice({ kind: "error", text: "Failed to list the requests.", detail: pagedList.error });
   }, [pagedList, pagedList?.error]);
   useEffect(() => {
-    if (!pagedDir) setListMeta(undefined);
-  }, [pagedDir]);
+    if (!pagedToken) setListMeta(undefined);
+  }, [pagedToken]);
   const filteredLength = pagedList ? pagedList.length : localFiltered.length;
   const rowAt = (index: number): RequestSummary | undefined =>
     pagedList ? pagedList.row(index) : localFiltered[index];
 
-  const remoteCounts = pagedDir ? listMeta?.counts : undefined;
+  const remoteCounts = pagedToken ? listMeta?.counts : undefined;
   const counts = remoteCounts ?? {
     all: requests.length,
     fetch: requests.filter((r) => r.type === "fetch" || r.type === "xhr").length,
@@ -2327,11 +2338,11 @@ export default function App() {
     error: requests.filter((r) => r.status >= 400).length,
   };
   const targetCount = (id: TargetFilter) =>
-    pagedDir ? listMeta?.targetCounts?.[id] ?? 0 : targetFilterCount(requests, id);
-  const failCount = pagedDir
+    pagedToken ? listMeta?.targetCounts?.[id] ?? 0 : targetFilterCount(requests, id);
+  const failCount = pagedToken
     ? [...outcomes.values()].filter((o) => isAppFailure(o)).length
     : requests.filter((r) => isAppFailure(outcomes.get(r.id))).length;
-  const blockCount = pagedDir
+  const blockCount = pagedToken
     ? [...outcomes.values()].filter((o) => isPossibleBlock(o)).length
     : requests.filter((r) => isPossibleBlock(outcomes.get(r.id))).length;
 
@@ -2732,7 +2743,7 @@ export default function App() {
                 />
                 <kbd>{shortcutLabel("⌘F")}</kbd>
               </div>
-              {searchDir && (
+              {searchToken && (
                 <div className="search-opts" role="group" aria-label="Search scopes">
                   {ALL_SCOPES.map((scope) => (
                     <label key={scope} className={scopes.includes(scope) ? "chip-filter active" : "chip-filter"}>
@@ -2866,7 +2877,7 @@ export default function App() {
 
             {searchText && (
               <div className="search-status" role="status">
-                {!searchDir ? (
+                {!searchToken ? (
                   <span>Search covers metadata only (URL, id, status): payload search requires a real session open in the app.</span>
                 ) : !searchResult && !searchState?.error ? (
                   <span>Searching payloads…</span>
@@ -3056,7 +3067,7 @@ export default function App() {
 
         {view === "timeline" && (
           <TimelineView
-            sessionDir={session.sourcePath}
+            sessionToken={session.sourceToken}
             requests={requests}
             onBack={() => setView("session")}
             onOpenRequest={(id) => {
@@ -3074,17 +3085,17 @@ export default function App() {
             result={validation.result}
             tracePath={validation.tracePath}
             onBack={closeValidation}
-            onSanitizeTrace={() => setSanitizeTraceDir(validation.result.traceDir)}
+            onSanitizeTrace={() => setSanitizeTrace({ path: validation.result.traceDir, token: validation.result.traceToken })}
             onKept={() => setValidation((v) => (v ? { ...v, kept: true } : v))}
-            onRevalidate={(mapOrigin) => void validateExecution({ tracePath: validation.tracePath, mapOrigin })}
+            onRevalidate={(mapOrigin) => void validateExecution({ traceToken: validation.traceToken, tracePath: validation.tracePath, mapOrigin })}
           />
         )}
 
         {view === "capture-compare" && captureCmp && (
           <CaptureCompareView
             summary={captureCmp.summary}
-            dirA={captureCmp.dirA}
-            dirB={captureCmp.dirB}
+            tokenA={captureCmp.tokenA}
+            tokenB={captureCmp.tokenB}
             labelA={captureCmp.labelA}
             labelB={captureCmp.labelB}
             onBack={() => setView("session")}
@@ -3122,10 +3133,10 @@ export default function App() {
           />
         )}
 
-        {sanitizeTraceDir && (
+        {sanitizeTrace && (
           <SanitizeDialog
-            session={{ ...session, id: "script-trace", sourcePath: sanitizeTraceDir }}
-            onClose={() => setSanitizeTraceDir(null)}
+            session={{ ...session, id: "script-trace", sourcePath: sanitizeTrace.path, sourceToken: sanitizeTrace.token }}
+            onClose={() => setSanitizeTrace(null)}
             onOpened={(payload) => {
               closeValidation(); // the sanitized session becomes the open one; the trace's temporary session is deleted
               applyPayload(payload);
