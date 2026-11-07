@@ -492,7 +492,13 @@ async fn pick_path(
     let app = app.clone();
     let title = title.to_string();
     let filter = filter.map(|(name, extensions)| {
-        (name.to_string(), extensions.iter().map(|e| e.to_string()).collect::<Vec<String>>())
+        (
+            name.to_string(),
+            extensions
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<String>>(),
+        )
     });
     let picked = tauri::async_runtime::spawn_blocking(move || {
         let mut dialog = app.dialog().file().set_title(title);
@@ -512,13 +518,18 @@ async fn pick_path(
     .await
     .map_err(|error| format!("the dialog was interrupted: {error}"))?;
     picked
-        .map(|path| path.into_path().map_err(|error| format!("the chosen location is not usable: {error}")))
+        .map(|path| {
+            path.into_path()
+                .map_err(|error| format!("the chosen location is not usable: {error}"))
+        })
         .transpose()
 }
 
 /// The file behind an import token (HAR, NetLog or trace).
 fn import_path_for_token(token: &str) -> Result<String, String> {
-    Ok(grants::resolve(token, &[grants::Kind::ImportFile])?.display().to_string())
+    Ok(grants::resolve(token, &[grants::Kind::ImportFile])?
+        .display()
+        .to_string())
 }
 
 /// The file to import: the token's file, or the file the user picks (`None` if cancelled).
@@ -531,9 +542,11 @@ async fn import_path(
 ) -> Result<Option<String>, String> {
     match token {
         Some(token) => Ok(Some(import_path_for_token(&token)?)),
-        None => Ok(pick_path(app, title, Pick::OpenFile, Some((name, extensions)), None)
-            .await?
-            .map(|path| path.display().to_string())),
+        None => Ok(
+            pick_path(app, title, Pick::OpenFile, Some((name, extensions)), None)
+                .await?
+                .map(|path| path.display().to_string()),
+        ),
     }
 }
 
@@ -1150,7 +1163,11 @@ pub struct ChromeStatus {
 
 #[tauri::command]
 pub async fn choose_chrome(app: AppHandle) -> Result<Option<ChromeInfo>, String> {
-    let pick = if cfg!(target_os = "macos") { Pick::Folder } else { Pick::OpenFile };
+    let pick = if cfg!(target_os = "macos") {
+        Pick::Folder
+    } else {
+        Pick::OpenFile
+    };
     let Some(path) = pick_path(&app, "Select Google Chrome", pick, None, None).await? else {
         return Ok(None);
     };
@@ -1205,7 +1222,10 @@ pub async fn pick_trace_file(app: AppHandle) -> Result<Option<PickedPath>, Strin
         return Ok(None);
     };
     let token = grants::issue(grants::Kind::ImportFile, &path)?;
-    Ok(Some(PickedPath { token, path: path.display().to_string() }))
+    Ok(Some(PickedPath {
+        token,
+        path: path.display().to_string(),
+    }))
 }
 
 /// The second session to compare (a folder); `None` if cancelled.
@@ -1223,7 +1243,10 @@ pub async fn pick_compare_session(app: AppHandle) -> Result<Option<PickedPath>, 
         return Ok(None);
     };
     let token = grants::issue(grants::Kind::Session, &path)?;
-    Ok(Some(PickedPath { token, path: path.display().to_string() }))
+    Ok(Some(PickedPath {
+        token,
+        path: path.display().to_string(),
+    }))
 }
 
 /// Reads a text preview of a session attachment (hard limit, never leaves the folder).
@@ -1595,7 +1618,10 @@ pub fn discard_validation(app: AppHandle, trace_token: String) -> Result<(), Str
 
 /// "Keep this execution": copies the trace's session to a new folder and deletes the temporary one.
 #[tauri::command]
-pub async fn keep_validation(app: AppHandle, trace_token: String) -> Result<Option<String>, String> {
+pub async fn keep_validation(
+    app: AppHandle,
+    trace_token: String,
+) -> Result<Option<String>, String> {
     let trace_dir = session_dir_for_token(&trace_token)?;
     let Some(destination) = pick_path(
         &app,
@@ -2300,7 +2326,8 @@ pub async fn save_sanitized(
     let default_name = Path::new(&suggested_name)
         .file_name()
         .map(|name| name.to_string_lossy().into_owned());
-    let Some(destination) = pick_path(&app, title, Pick::SaveFile, None, default_name).await? else {
+    let Some(destination) = pick_path(&app, title, Pick::SaveFile, None, default_name).await?
+    else {
         return Ok(None);
     };
     let saved = tauri::async_runtime::spawn_blocking(move || {
@@ -2647,13 +2674,10 @@ mod tests {
     fn attachment_preview_is_text_inside_attachments() {
         let dir = temp_session_dir("attachment");
         fs::write(dir.join("attachments/req.bin"), b"hello").unwrap();
-        let payload =
-            read_attachment(session_token(&dir), "req.bin".to_string()).unwrap();
+        let payload = read_attachment(session_token(&dir), "req.bin".to_string()).unwrap();
         assert_eq!(payload.kind, "text");
         assert_eq!(payload.text.as_deref(), Some("hello"));
-        assert!(
-            read_attachment(session_token(&dir), "../escape".to_string()).is_err()
-        );
+        assert!(read_attachment(session_token(&dir), "../escape".to_string()).is_err());
         fs::remove_dir_all(dir).ok();
     }
 
@@ -2781,9 +2805,11 @@ mod tests {
         assert!(read_body_blocking(d, "link.bin", 100)
             .unwrap_err()
             .contains("symbolic link"));
-        assert!(read_attachment(session_token(Path::new(d)), "link.bin".to_string())
-            .unwrap_err()
-            .contains("symbolic link"));
+        assert!(
+            read_attachment(session_token(Path::new(d)), "link.bin".to_string())
+                .unwrap_err()
+                .contains("symbolic link")
+        );
         assert_eq!(read_body_blocking(d, "ok.bin", 100).unwrap().kind, "text");
         // attachments/ folder as a link
         let dir2 = temp_session_dir("symlink2");
@@ -3227,8 +3253,7 @@ mod tests {
         let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let capture = real_shape_session("timeline-cap");
         // timeline: application events with the adapter label and collapsed groups
-        let rt = tauri::async_runtime::block_on(session_timeline(session_token(&capture)))
-            .unwrap();
+        let rt = tauri::async_runtime::block_on(session_timeline(session_token(&capture))).unwrap();
         assert!(rt.counts.events > 0 && rt.counts.protection > 0);
         let json = serde_json::to_value(&rt).unwrap();
         assert!(json["items"]
@@ -3362,7 +3387,8 @@ mod tests {
         let dir = std::env::var("SL_SESSION").expect("SL_SESSION");
         let out = PathBuf::from(std::env::var("SL_DUMP").expect("SL_DUMP"));
         fs::create_dir_all(&out).unwrap();
-        let t = tauri::async_runtime::block_on(session_timeline(session_token(Path::new(&dir)))).unwrap();
+        let t = tauri::async_runtime::block_on(session_timeline(session_token(Path::new(&dir))))
+            .unwrap();
         fs::write(
             out.join("timeline.json"),
             serde_json::to_string(&t).unwrap(),
@@ -3821,8 +3847,14 @@ mod grant_tests {
         assert!(session_dir_for_token(&import).is_err());
         assert!(import_path_for_token(&session).is_err());
         // The normal flow: each token gives its own path.
-        assert_eq!(import_path_for_token(&import).unwrap(), file.display().to_string());
-        assert_eq!(session_dir_for_token(&session).unwrap(), dir.display().to_string());
+        assert_eq!(
+            import_path_for_token(&import).unwrap(),
+            file.display().to_string()
+        );
+        assert_eq!(
+            session_dir_for_token(&session).unwrap(),
+            dir.display().to_string()
+        );
         fs::remove_dir_all(&dir).ok();
     }
 
