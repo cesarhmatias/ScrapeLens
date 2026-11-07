@@ -50,10 +50,12 @@ pub(crate) const CONFIRM_BUDGET: Duration = Duration::from_millis(400);
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) const CHECK_WINDOW: Duration = Duration::from_secs(3);
 
-/// Tree generations one connection may wait for before its miss is final. A connection
-/// that is already established is listed by the first generation that starts after it.
+/// Tree generations one connection may wait for before its miss is final. One complete
+/// generation that starts after the connection arrived decides it. More generations only
+/// repeat the same scan under a flood: measured on Chrome, a second one costs pages (review-013
+/// M1), and a stranger that a complete scan does not list is not in the tree.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-const GENERATIONS: usize = 4;
+const GENERATIONS: usize = 1;
 
 /// Bounds the connections or scans that run at the same time. A permit is held for as long as
 /// the work it counts.
