@@ -12,11 +12,67 @@
 //! process on another local address reuse the browser's port and be taken for it.
 
 use std::net::{IpAddr, SocketAddr};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 /// No process still has this socket. The relay closes it without admitting it and
 /// without showing a failure. A client that is still reading keeps the socket and
 /// is refused instead.
 pub(crate) const ALREADY_CLOSED: &str = "the client closed before its process could be checked";
+
+/// The process scans in progress are at their limit, or a scan waited out its budget.
+/// The connection is refused: a check that cannot run is never a pass.
+pub(crate) const BUSY: &str = "too many connections are being checked at once";
+
+/// Bounds the connections or scans that run at the same time. A permit is held for as long as
+/// the work it counts; a pause between two confirmation attempts holds none.
+pub(crate) struct Gate {
+    limit: usize,
+    used: Mutex<usize>,
+    freed: Condvar,
+}
+
+/// One permit. It holds the gate, so it can outlive the scope that took it (a connection's
+/// waiting slot moves into its thread). The permit is returned when it drops.
+pub(crate) struct GatePermit(Arc<Gate>);
+
+impl Gate {
+    pub(crate) fn new(limit: usize) -> Arc<Gate> {
+        Arc::new(Gate { limit: limit.max(1), used: Mutex::new(0), freed: Condvar::new() })
+    }
+
+    /// Waits up to `wait` for a permit. `None` when none frees up in time.
+    pub(crate) fn acquire(gate: &Arc<Gate>, wait: Duration) -> Option<GatePermit> {
+        let deadline = Instant::now() + wait;
+        let mut used = gate.used.lock().ok()?;
+        loop {
+            if *used < gate.limit {
+                *used += 1;
+                return Some(GatePermit(Arc::clone(gate)));
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return None;
+            }
+            let (guard, _) = gate.freed.wait_timeout(used, deadline - now).ok()?;
+            used = guard;
+        }
+    }
+
+    /// A permit now, or `None`.
+    pub(crate) fn try_acquire(gate: &Arc<Gate>) -> Option<GatePermit> {
+        Gate::acquire(gate, Duration::ZERO)
+    }
+}
+
+impl Drop for GatePermit {
+    fn drop(&mut self) {
+        if let Ok(mut used) = self.0.used.lock() {
+            *used = used.saturating_sub(1);
+        }
+        self.0.freed.notify_one();
+    }
+}
 
 /// `owner` is the browser pid published by the capture. Zero means it is not known yet.
 /// `client` is the address the relay sees for the connection, `listen` the relay's own.
@@ -24,21 +80,22 @@ pub(crate) fn admit(
     client: SocketAddr,
     listen: SocketAddr,
     owner: u32,
+    checks: &Arc<Gate>,
 ) -> Result<(), &'static str> {
     if owner == 0 {
         return Err("the capture browser is not running yet");
     }
     #[cfg(target_os = "linux")]
     {
-        linux::admit(client, listen, owner)
+        linux::admit(client, listen, owner, checks)
     }
     #[cfg(target_os = "macos")]
     {
-        macos::admit(client, listen, owner)
+        macos::admit(client, listen, owner, checks)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
-        let _ = (client, listen, owner);
+        let _ = (client, listen, owner, checks);
         Err("the client process could not be confirmed")
     }
 }
@@ -77,6 +134,16 @@ fn retry_for(mut once: impl FnMut() -> Result<(), &'static str>) -> Result<(), &
     }
 }
 
+/// One process scan under a permit of `checks`. Without a permit within the budget the scan
+/// does not run, and the connection is refused like any other failed check.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn scan(checks: &Arc<Gate>, once: impl FnOnce() -> Result<(), &'static str>) -> Result<(), &'static str> {
+    match Gate::acquire(checks, CONFIRM_BUDGET) {
+        Some(_permit) => once(),
+        None => Err(BUSY),
+    }
+}
+
 /// The address as the pair the relay compares: an IPv4-mapped IPv6 address is its IPv4 form,
 /// so `::ffff:127.0.0.1` and `127.0.0.1` are the same client.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -88,16 +155,18 @@ fn canonical(ip: IpAddr) -> IpAddr {
 mod linux {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
-    use super::canonical;
+    use std::sync::Arc;
+
+    use super::{canonical, scan, Gate};
 
     const NOT_BROWSER: &str = "the client process is not the capture browser";
     const UNCONFIRMED: &str = "the client process could not be confirmed";
 
-    pub(crate) fn admit(client: SocketAddr, listen: SocketAddr, owner: u32) -> Result<(), &'static str> {
+    pub(crate) fn admit(client: SocketAddr, listen: SocketAddr, owner: u32, checks: &Arc<Gate>) -> Result<(), &'static str> {
         // The socket can show up in /proc a moment after accept, and a busy
         // /proc read can fail or list one row twice. Spread the misses across
         // the budget, then fail closed. A hit does not sleep.
-        let last = match super::retry_for(|| admit_once(client, listen, owner)) {
+        let last = match super::retry_for(|| scan(checks, || admit_once(client, listen, owner))) {
             Ok(()) => return Ok(()),
             Err(reason) => reason,
         };
@@ -106,24 +175,27 @@ mod linux {
         // unreadable process of another uid is not that holder. A same-uid
         // process that still has it stays refused, and is not admitted here.
         if last == NOT_BROWSER || last == UNCONFIRMED {
-            return released_or(client, listen, last);
+            return released_or(client, listen, last, checks);
         }
         Err(last)
     }
 
     /// `held` is the refusal when a process of the socket uid still has the inode.
-    fn released_or(client: SocketAddr, listen: SocketAddr, held: &'static str) -> Result<(), &'static str> {
-        match client_once(client, listen) {
+    fn released_or(
+        client: SocketAddr,
+        listen: SocketAddr,
+        held: &'static str,
+        checks: &Arc<Gate>,
+    ) -> Result<(), &'static str> {
+        scan(checks, || match client_once(client, listen) {
             Ok(None) => Err(super::ALREADY_CLOSED),
             Err(()) => Err(UNCONFIRMED),
-            // No owner (inode 0): the kernel has no process for this socket, so it is closed.
-            Ok(Some(row)) if row.inode == 0 => Err(super::ALREADY_CLOSED),
             Ok(Some(row)) => match uid_holds_inode(row.inode, row.uid) {
                 Ok(false) => Err(super::ALREADY_CLOSED),
                 Ok(true) => Err(held),
                 Err(()) => Err(UNCONFIRMED),
             },
-        }
+        })
     }
 
     fn admit_once(client: SocketAddr, listen: SocketAddr, owner: u32) -> Result<(), &'static str> {
@@ -154,9 +226,7 @@ mod linux {
 
     fn find_client_inode(client: SocketAddr, listen: SocketAddr) -> Result<u64, &'static str> {
         match client_once(client, listen) {
-            Ok(Some(row)) if row.inode != 0 => Ok(row.inode),
-            // No owner (inode 0) is a closed socket, not a stranger (LOW 5).
-            Ok(Some(_)) => Err(super::ALREADY_CLOSED),
+            Ok(Some(row)) => Ok(row.inode),
             // TIME_WAIT and a socket that has already disappeared have no process.
             // A client that is still reading stays ESTABLISHED or FIN_WAIT and is listed.
             Ok(None) => Err(super::ALREADY_CLOSED),
@@ -370,7 +440,7 @@ mod linux {
         use std::thread;
         use std::time::Duration;
 
-        use super::super::ALREADY_CLOSED;
+        use super::super::{Gate, ALREADY_CLOSED};
         use super::{admit, client_once, released_or, uid_holds_inode, NOT_BROWSER, UNCONFIRMED};
 
         #[test]
@@ -390,19 +460,20 @@ mod linux {
 
         #[test]
         fn a_dropped_socket_is_quiet_and_a_live_one_stays_refused() {
+            let gate = Gate::new(8);
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let listen = listener.local_addr().unwrap();
             let client = TcpStream::connect(listen).unwrap();
             let (accepted, _) = listener.accept().unwrap();
             let client_addr = client.local_addr().unwrap();
-            assert_eq!(released_or(client_addr, listen, UNCONFIRMED), Err(UNCONFIRMED));
-            assert_eq!(released_or(client_addr, listen, NOT_BROWSER), Err(NOT_BROWSER));
+            assert_eq!(released_or(client_addr, listen, UNCONFIRMED, &gate), Err(UNCONFIRMED));
+            assert_eq!(released_or(client_addr, listen, NOT_BROWSER, &gate), Err(NOT_BROWSER));
 
             drop(client);
             drop(accepted);
             thread::sleep(Duration::from_millis(50));
-            assert_eq!(released_or(client_addr, listen, UNCONFIRMED), Err(ALREADY_CLOSED));
-            assert_eq!(released_or(client_addr, listen, NOT_BROWSER), Err(ALREADY_CLOSED));
+            assert_eq!(released_or(client_addr, listen, UNCONFIRMED, &gate), Err(ALREADY_CLOSED));
+            assert_eq!(released_or(client_addr, listen, NOT_BROWSER, &gate), Err(ALREADY_CLOSED));
 
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
             let listen = listener.local_addr().unwrap();
@@ -410,7 +481,7 @@ mod linux {
             let _accepted = listener.accept().unwrap();
             let client_addr = client.local_addr().unwrap();
             let mut sleeper = Command::new("/bin/sleep").arg("30").spawn().unwrap();
-            let verdict = admit(client_addr, listen, sleeper.id());
+            let verdict = admit(client_addr, listen, sleeper.id(), &gate);
             let _ = sleeper.kill();
             let _ = sleeper.wait();
             assert_eq!(verdict, Err(NOT_BROWSER), "{verdict:?}");
@@ -424,7 +495,9 @@ mod macos {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
     use std::os::raw::c_void;
 
-    use super::canonical;
+    use std::sync::Arc;
+
+    use super::{canonical, scan, Gate};
 
     const NOT_BROWSER: &str = "the client process is not the capture browser";
     const UNCONFIRMED: &str = "the client process could not be confirmed";
@@ -459,11 +532,11 @@ mod macos {
         fn proc_pidfdinfo(pid: i32, fd: i32, flavor: i32, buffer: *mut c_void, buffersize: i32) -> i32;
     }
 
-    pub(crate) fn admit(client: SocketAddr, listen: SocketAddr, owner: u32) -> Result<(), &'static str> {
+    pub(crate) fn admit(client: SocketAddr, listen: SocketAddr, owner: u32, checks: &Arc<Gate>) -> Result<(), &'static str> {
         // A helper can connect in the same instant it appears in the process tree.
         // Spread the misses across the same budget as Linux, then still fail closed.
         // A hit does not sleep.
-        let last = match super::retry_for(|| admit_once(client, listen, owner)) {
+        let last = match super::retry_for(|| scan(checks, || admit_once(client, listen, owner))) {
             Ok(()) => return Ok(()),
             Err(reason) => reason,
         };
@@ -471,22 +544,22 @@ mod macos {
         // reading has it open somewhere else. A Chrome cancel has already dropped
         // the descriptor, so nobody can read a tunnel reply.
         if last == NOT_BROWSER {
-            return match socket_holder(client, listen) {
+            return scan(checks, || match socket_holder(client, listen) {
                 Ok(Some(pid)) => {
                     if descends_from(pid, owner)? { Ok(()) } else { Err(NOT_BROWSER) }
                 }
                 Ok(None) => Err(super::ALREADY_CLOSED),
                 Err(()) => Err(UNCONFIRMED),
-            };
+            });
         }
         // The owner tree could not be read fully. A finished scan that finds
         // nobody still holding the socket is a cancel, not a user-facing failure.
         // A process that still has it stays unconfirmed: this does not admit it.
         if last == UNCONFIRMED {
-            return match socket_holder(client, listen) {
+            return scan(checks, || match socket_holder(client, listen) {
                 Ok(None) => Err(super::ALREADY_CLOSED),
                 Ok(Some(_)) | Err(()) => Err(UNCONFIRMED),
-            };
+            });
         }
         Err(last)
     }
@@ -687,7 +760,7 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
-    use super::{admit, ALREADY_CLOSED, CONFIRM_BUDGET};
+    use super::{admit, Gate, ALREADY_CLOSED, CONFIRM_BUDGET};
 
     fn loopback_pair() -> (TcpStream, TcpStream, SocketAddr, SocketAddr) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -755,11 +828,12 @@ mod tests {
 
     #[test]
     fn a_confirmed_owner_returns_before_the_retry_budget() {
+        let gate = Gate::new(64);
         let mut worst = Duration::ZERO;
         for _ in 0..20 {
             let (client, accepted, peer, listen) = loopback_pair();
             let started = Instant::now();
-            let verdict = admit(peer, listen, std::process::id());
+            let verdict = admit(peer, listen, std::process::id(), &gate);
             let elapsed = started.elapsed();
             assert_eq!(verdict, Ok(()), "{verdict:?} after {elapsed:?}");
             worst = worst.max(elapsed);
@@ -775,13 +849,14 @@ mod tests {
 
     #[test]
     fn twenty_held_sockets_are_admitted_while_the_cpu_is_busy() {
+        let gate = Gate::new(64);
         let _burn = Burners::start();
         let mut worst = Duration::ZERO;
         let mut refused = 0u32;
         for i in 0..20 {
             let (client, accepted, peer, listen) = loopback_pair();
             let started = Instant::now();
-            let verdict = admit(peer, listen, std::process::id());
+            let verdict = admit(peer, listen, std::process::id(), &gate);
             let elapsed = started.elapsed();
             if verdict.is_err() {
                 refused += 1;
@@ -795,11 +870,11 @@ mod tests {
         let sleeper = Command::new("/bin/sleep").arg("30").spawn().unwrap();
         let sleeper = StopSleep(Some(sleeper));
         let owner = sleeper.0.as_ref().unwrap().id();
-        let open = admit(open_peer, open_listen, owner);
+        let open = admit(open_peer, open_listen, owner, &gate);
         let (fin_client, fin_accepted, fin_peer, fin_listen) = loopback_pair();
         fin_client.shutdown(Shutdown::Write).unwrap();
         let fin_started = Instant::now();
-        let fin = admit(fin_peer, fin_listen, owner);
+        let fin = admit(fin_peer, fin_listen, owner, &gate);
         let fin_elapsed = fin_started.elapsed();
         eprintln!(
             "load admits worst={worst:?} refused={refused} open={open:?} fin={fin:?} fin_elapsed={fin_elapsed:?}"
@@ -823,19 +898,22 @@ mod tests {
 
     #[test]
     fn a_slow_miss_does_not_hold_up_another_connection() {
+        let gate = Gate::new(64);
         let (stranger_client, stranger_accepted, stranger_peer, stranger_listen) = loopback_pair();
         let sleeper = Command::new("/bin/sleep").arg("30").spawn().unwrap();
         let sleeper = StopSleep(Some(sleeper));
         let owner = sleeper.0.as_ref().unwrap().id();
         let started = Instant::now();
+        let slow_gate = gate;
+        let slow_gate_thread = Arc::clone(&slow_gate);
         let slow = thread::spawn(move || {
-            let verdict = admit(stranger_peer, stranger_listen, owner);
+            let verdict = admit(stranger_peer, stranger_listen, owner, &slow_gate_thread);
             (verdict, started.elapsed())
         });
         thread::sleep(Duration::from_millis(30));
         let (client, accepted, peer, listen) = loopback_pair();
         let fast_started = Instant::now();
-        let fast = admit(peer, listen, std::process::id());
+        let fast = admit(peer, listen, std::process::id(), &slow_gate);
         let fast_elapsed = fast_started.elapsed();
         let (slow_verdict, slow_elapsed) = slow.join().unwrap();
         eprintln!("overlap fast={fast_elapsed:?} slow={slow_elapsed:?} {slow_verdict:?}");
@@ -868,7 +946,7 @@ mod same_port_tests {
     use std::thread;
     use std::time::Duration;
 
-    use super::admit;
+    use super::{admit, Gate};
 
     /// The child that owns the browser-like socket. Runs only when spawned by the test.
     #[test]
@@ -986,14 +1064,14 @@ mod same_port_tests {
 
         // The owner's own socket, on the loopback address the relay sees, is admitted.
         let owner_addr = SocketAddr::from(([127, 0, 0, 1], browser_port));
-        assert_eq!(admit(owner_addr, listen, owner), Ok(()), "the owner's socket must stay admitted");
+        assert_eq!(admit(owner_addr, listen, owner, &Gate::new(64)), Ok(()), "the owner's socket must stay admitted");
 
         // The stranger: same source port, another loopback address, held open towards the relay.
         let stranger = connect_from(SocketAddrV4::new(other, browser_port), SocketAddrV4::new(Ipv4Addr::LOCALHOST, listen.port()))
             .expect("the second local address can send to the relay");
         let (_stranger_side, _) = listener.accept().unwrap();
         let stranger_addr = SocketAddr::new(IpAddr::V4(other), browser_port);
-        let verdict = admit(stranger_addr, listen, owner);
+        let verdict = admit(stranger_addr, listen, owner, &Gate::new(64));
         drop(stranger);
         assert!(verdict.is_err(), "a stranger with the browser's port was admitted: {verdict:?}");
     }

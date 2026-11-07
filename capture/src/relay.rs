@@ -111,6 +111,13 @@ const ACCEPT_POLL: Duration = Duration::from_millis(10);
 /// Enough for a real Chrome (page, workers, service worker, utility and network service)
 /// without letting a local process open tunnels without bound.
 const MAX_CLIENTS: usize = 512;
+/// Process checks that read `/proc` or the process table at the same time. A check holds one
+/// of these only while it scans; a retry's pause holds none.
+const MAX_CHECKS: usize = 64;
+/// Connections waiting for their check, separate from the tunnels above. A connection that
+/// misses the browser's tree waits here for its retries, never in a tunnel slot, so a local
+/// flood cannot take the browser's own tunnels. Beyond this, new connections are refused.
+const MAX_PENDING_CHECKS: usize = 1024;
 const MAX_FAILURES: usize = 32;
 
 /// Why the relay could not start. Messages carry `scheme://host:port` at most, never
@@ -218,6 +225,8 @@ impl Relay {
             client_limit: Arc::clone(&client_limit),
             owner: Arc::clone(&owner),
             listen,
+            checks: peer::Gate::new(MAX_CHECKS),
+            pending: peer::Gate::new(MAX_PENDING_CHECKS),
             peer_checks: Arc::clone(&peer_checks),
             peer_refused: Arc::clone(&peer_refused),
             peer_max_nanos: Arc::clone(&peer_max_nanos),
@@ -314,6 +323,10 @@ struct Shared {
     owner: Arc<AtomicU32>,
     /// The relay's own address, as the connections to it name it.
     listen: SocketAddr,
+    /// Process checks in progress; see `MAX_CHECKS`.
+    checks: Arc<peer::Gate>,
+    /// Connections waiting for their check; see `MAX_PENDING_CHECKS`.
+    pending: Arc<peer::Gate>,
     peer_checks: Arc<AtomicU64>,
     peer_refused: Arc<AtomicU64>,
     peer_max_nanos: Arc<AtomicU64>,
@@ -412,7 +425,7 @@ impl Shared {
             }
         };
         let started = std::time::Instant::now();
-        let verdict = peer::admit(client_addr, self.listen, owner);
+        let verdict = peer::admit(client_addr, self.listen, owner, &self.checks);
         let nanos = u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
         self.peer_checks.fetch_add(1, Ordering::Relaxed);
         let mut current = self.peer_max_nanos.load(Ordering::Relaxed);
@@ -508,17 +521,28 @@ fn accept_loop(listener: TcpListener, stop: Arc<AtomicBool>, shared: Shared) {
         match listener.accept() {
             Ok((client, _)) => {
                 let _ = client.set_nonblocking(false);
-                if !shared.try_acquire() {
+                // The connection waits for its check on its own slot, not a tunnel slot.
+                let Some(pending) = peer::Gate::try_acquire(&shared.pending) else {
                     shared.fail("too many connections".to_string());
                     let _ = client.shutdown(Shutdown::Both);
                     continue;
-                }
+                };
                 let shared = shared.clone();
                 thread::spawn(move || {
-                    let _slot = ClientSlot(shared.clone());
                     let _tracked_client = shared.track(&client);
-                    match shared.admit(&client) {
-                        Admission::Admitted => handle_client(client, shared),
+                    let verdict = shared.admit(&client);
+                    // The check is over: its waiting slot is free before any tunnel starts.
+                    drop(pending);
+                    match verdict {
+                        Admission::Admitted => {
+                            if !shared.try_acquire() {
+                                shared.fail("too many connections".to_string());
+                                let _ = client.shutdown(Shutdown::Both);
+                                return;
+                            }
+                            let _slot = ClientSlot(shared.clone());
+                            handle_client(client, shared);
+                        }
                         Admission::QuietClose => {
                             let _ = client.shutdown(Shutdown::Both);
                         }
@@ -1937,7 +1961,13 @@ mod wire_tests {
             let relay = start(&format!("socks5://{USER}:{PASSWORD}@127.0.0.1:{up}"), None);
             relay.port()
         };
-        assert!(TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_err());
+        // The relay closed its listener when it was dropped, so the port can be bound again at
+        // once. A connect is not a reliable test: another test may take the port, and a free
+        // ephemeral port can connect to itself.
+        assert!(
+            TcpListener::bind((Ipv4Addr::LOCALHOST, port)).is_ok(),
+            "the relay still holds its port after it was dropped"
+        );
     }
 
     #[test]
@@ -2034,12 +2064,15 @@ mod wire_tests {
         let newest = format!("127.0.0.1:{}", MAX_FAILURES + 8);
         assert!(failures.iter().any(|line| line.ends_with(&newest)), "{failures:?}");
 
+        // The cap counts admitted tunnels. The held connections belong to this process, so they
+        // are admitted and keep their slots while the next one arrives.
         relay.set_connection_limit(2);
+        relay.set_owner_pid(std::process::id());
         let mut held = Vec::new();
         for _ in 0..2 {
             held.push(TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())).unwrap());
         }
-        thread::sleep(Duration::from_millis(80));
+        thread::sleep(Duration::from_millis(200));
         let mut extra = TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())).unwrap();
         extra.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
         let mut buf = [0u8; 1];
@@ -2082,6 +2115,91 @@ mod wire_tests {
         for line in &failures {
             assert!(!line.contains(PASSWORD) && !line.contains(USER) && !line.contains("wrong-"), "{line}");
         }
+    }
+
+    /// Runs only when spawned by `a_flood_of_strangers_does_not_refuse_the_browser`: a
+    /// browser child that holds one connection to the relay, as Chrome does.
+    #[test]
+    fn relay_browser_probe() {
+        let Ok(target) = std::env::var("SCRAPELENS_RELAY_BROWSER") else {
+            return;
+        };
+        // `relay port,echo port`: the destination is a live echo server, so a tunnel succeeds.
+        let (port, echo) = target.split_once(',').expect("relay and echo ports");
+        let port: u16 = port.parse().expect("relay port");
+        let echo: u16 = echo.parse().expect("echo port");
+        // The parent publishes this pid right after spawning the child: wait for it.
+        thread::sleep(Duration::from_millis(400));
+        let (code, _socket) = chrome_request(port, 1, &[127, 0, 0, 1], echo).unwrap();
+        println!("CODE {code}");
+        thread::sleep(Duration::from_secs(25));
+    }
+
+    /// The flood: 800 connections the browser does not own, all open at once, while the
+    /// browser makes its one connection. A miss is retried for its whole budget, so strangers
+    /// hold their slots for that long. The browser's connection must still be admitted.
+    #[test]
+    fn a_flood_of_strangers_does_not_refuse_the_browser() {
+        struct Kill(std::process::Child);
+        impl Drop for Kill {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let (up, seen) = socks_upstream(USER, PASSWORD);
+        let link = ProxyLink::parse(&format!("socks5://{USER}:{PASSWORD}@127.0.0.1:{up}")).unwrap();
+        let relay = Relay::start(&link, None).unwrap();
+        let mut browser = Kill(
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "relay::wire_tests::relay_browser_probe", "--nocapture", "--test-threads", "1"])
+                .env("SCRAPELENS_RELAY_BROWSER", format!("{},{}", relay.port(), echo_server()))
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
+        relay.set_owner_pid(browser.0.id());
+        let stdout = browser.0.stdout.take().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            use std::io::BufRead;
+            for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
+                // The harness writes its own "name ... " before the probe's line.
+                if let Some(at) = line.find("CODE ") {
+                    let code = line[at + 5..].split_whitespace().next().and_then(|c| c.parse::<u8>().ok());
+                    let _ = tx.send(code);
+                    return;
+                }
+            }
+        });
+        let started = std::time::Instant::now();
+        let mut strangers = Vec::new();
+        for _ in 0..800 {
+            if let Ok(stream) = TcpStream::connect((Ipv4Addr::LOCALHOST, relay.port())) {
+                strangers.push(stream);
+            }
+        }
+        let code = rx
+            .recv_timeout(Duration::from_secs(20))
+            .expect("the browser's connection was not answered")
+            .expect("the browser's reply carried no code");
+        let admitted_after = started.elapsed();
+        assert_eq!(
+            code, 0,
+            "the browser was refused during the flood after {admitted_after:?}: {:?}",
+            relay.failures()
+        );
+        assert!(admitted_after < Duration::from_secs(5), "{admitted_after:?}");
+        let logins = seen.lock().unwrap().iter().filter(|line| *line == "auth-ok").count();
+        assert_eq!(logins, 1, "only the browser reached the upstream: {:?}", seen.lock().unwrap());
+        // Each stranger is refused when its own budget ends, which can be after the browser's
+        // connection: wait for all of them before counting.
+        let waited = std::time::Instant::now();
+        while relay.peer_check().refused < strangers.len() as u64 && waited.elapsed() < Duration::from_secs(5) {
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(relay.peer_check().refused, strangers.len() as u64, "every stranger was checked and refused");
+        drop(strangers);
     }
 
     /// Runs only when spawned by `a_stranger_is_refused_and_a_child_of_the_owner_is_admitted`.
@@ -2143,8 +2261,9 @@ mod wire_tests {
             .unwrap();
         assert!(
             child.status.success(),
-            "status {:?} stderr {}",
+            "status {:?} stdout {} stderr {}",
             child.status,
+            String::from_utf8_lossy(&child.stdout),
             String::from_utf8_lossy(&child.stderr)
         );
         let log = seen.lock().unwrap().clone();
@@ -2301,6 +2420,7 @@ mod wire_tests {
             server.peer_addr().unwrap(),
             listener.local_addr().unwrap(),
             sleeper.0.as_ref().unwrap().id(),
+            &super::peer::Gate::new(64),
         );
         assert_eq!(verdict, Err(super::peer::ALREADY_CLOSED), "{verdict:?}");
     }
